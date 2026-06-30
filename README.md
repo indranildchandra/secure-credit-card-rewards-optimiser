@@ -1,6 +1,6 @@
 <div align="center">
 
-# 💳 Secure Credit Card Rewards Optimiser
+# Secure Credit Card Rewards Optimiser
 
 **Ask _"I'm spending ₹X at [merchant] — which card?"_ and get the card that
 minimises your net spend — answered entirely on your own machine.**
@@ -12,9 +12,7 @@ local **Gemma** model via **Ollama**. No cloud LLM. No mailbox access. No paywal
 [![Model: Gemma](https://img.shields.io/badge/model-Gemma%204-4285F4?logo=google&logoColor=white)](https://ai.google.dev/gemma)
 [![Runs on: Ollama](https://img.shields.io/badge/runtime-Ollama-000000)](https://ollama.com)
 [![Built with: Google ADK](https://img.shields.io/badge/built%20with-Google%20ADK-34A853)](https://google.github.io/adk-docs/)
-[![Privacy](https://img.shields.io/badge/privacy-100%25%20local-success)](#-security-model)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000)](https://github.com/psf/black)
-[![Lint: ruff](https://img.shields.io/badge/lint-ruff-D7FF64)](https://docs.astral.sh/ruff/)
+[![Privacy](https://img.shields.io/badge/privacy-100%25%20local-success)](#security-model)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 </div>
@@ -29,22 +27,22 @@ best card** — and does it offline, so your spending data never leaves your lap
 
 ## Table of contents
 
-- [Highlights](#-highlights)
-- [How it works](#-how-it-works)
-- [Security model](#-security-model)
-- [Quickstart](#-quickstart)
-- [Usage](#-usage)
-- [Configure it for your own cards](#-configure-it-for-your-own-cards)
-- [Model (Gemma via Ollama)](#-model-gemma-via-ollama)
-- [Tools reference](#-tools-reference)
-- [Project structure](#-project-structure)
-- [Testing](#-testing)
-- [Linting & formatting](#-linting--formatting)
-- [Roadmap](#-roadmap)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [Highlights](#highlights)
+- [How it works](#how-it-works)
+- [Security model](#security-model)
+- [Quickstart](#quickstart)
+- [Usage](#usage)
+- [Configure it for your own cards](#configure-it-for-your-own-cards)
+- [Model (Gemma via Ollama)](#model-gemma-via-ollama)
+- [Tools reference](#tools-reference)
+- [Project structure](#project-structure)
+- [Testing](#testing)
+- [Linting & formatting](#linting--formatting)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
 
-## ✨ Highlights
+## Highlights
 
 - **100% local reasoning** — a Gemma model runs on your machine via Ollama; your
   amounts, merchants and card mix are never sent to a cloud LLM.
@@ -59,7 +57,7 @@ best card** — and does it offline, so your spending data never leaves your lap
   devaluations, with the query built around _merchant + card names only_.
 - **Zero custom UI** — the interface is the stock **Google ADK Web UI**.
 
-## 🧠 How it works
+## How it works
 
 The agent orchestrates a set of deterministic tools and formats a four-field
 answer. All card knowledge is read from config; only the offer-check tool touches
@@ -98,7 +96,7 @@ flowchart TD
 check any relevant cap/threshold → run a focused live-offer search → reply with
 **Winner / Reward / Logic / Live Update**.
 
-## 🔒 Security model
+## Security model
 
 | Concern | How it's handled |
 |---------|------------------|
@@ -111,7 +109,7 @@ check any relevant cap/threshold → run a focused live-offer search → reply w
 > machine is offline the agent simply reports "no live data" in the Live Update
 > field and answers from your config.
 
-## 🚀 Quickstart
+## Quickstart
 
 **Prerequisites:** Python 3.9+ and [Ollama](https://ollama.com).
 
@@ -127,7 +125,7 @@ chmod +x setup_venv.sh run.sh
 Open <http://localhost:8080>, select the **`optimizer`** agent, and ask away.
 `./run.sh --clean` wipes the local session DB (resets tracked spends/caps).
 
-## 💬 Usage
+## Usage
 
 > **You:** I am spending ₹1,50,000 on a MacBook Pro at an Apple Store. Which card?
 
@@ -146,7 +144,7 @@ search results.)_
 See [`tests/TEST-CASES.md`](tests/TEST-CASES.md) for ~30 worked prompts covering
 core routing, UPI amount bands, nuance checks, and cap-aware flows.
 
-## ⚙️ Configure it for your own cards
+## Configure it for your own cards
 
 This is a **generic** optimiser — bring your portfolio by editing
 [`config/cards.config`](config/cards.config) (JSON). No Python changes. The
@@ -189,7 +187,7 @@ You can also tune the agent's behaviour in
 [`config/system_instruction.prompt`](config/system_instruction.prompt) — no code
 required.
 
-## 🤖 Model (Gemma via Ollama)
+## Model (Gemma via Ollama)
 
 This project targets Google's **Gemma** family running locally on Ollama. The
 optimiser **requires tool calling**, which the **Gemma 4** generation supports on
@@ -209,7 +207,7 @@ OLLAMA_API_BASE=http://localhost:11434
 | `gemma4`     | —       | Alias for the current Gemma 4 default tag. |
 | `gemma4:27b` | ~17 GB  | Best quality; needs a large-VRAM GPU. |
 
-## 🧰 Tools reference
+## Tools reference
 
 All tools are plain Python functions exposed to the agent via ADK.
 
@@ -233,30 +231,34 @@ All tools are plain Python functions exposed to the agent via ADK.
 |--------|-----------|--------------|
 | `ddg_search` | `(query: str) -> str` | Free DuckDuckGo search for the latest offers/devaluations. No API key; the model authors a focused _merchant + card_ query. |
 
-## 🗂️ Project structure
+## Project structure
 
 ```
 config/
-  model.config             provider/model selection (Gemma via Ollama)
-  cards.config             your card knowledge base (Full Reference + Decision Matrix)
+  model.config              provider/model selection (Gemma via Ollama)
+  cards.config              your card knowledge base (Full Reference + Decision Matrix)
   system_instruction.prompt the agent's system prompt
 optimizer/
-  agent.py                 ADK root_agent — orchestrates tools, formats the answer
+  agent.py                  ADK root_agent — orchestrates tools, formats the answer
 data/
-  cards.py                 loads config/cards.config and derives lookup helpers
+  cards.py                  loads config/cards.config and derives lookup helpers
 tools/
-  card_tools.py            deterministic routing / lookup / reward-estimate tools
-  spend_tracker.py         session-state cap & threshold tracker
-  duckduckgo_search.py     live offers/devaluation web search
-config.py                  reads config/model.config -> MODEL (Ollama/Gemini)
-run.sh                     boots Ollama + `adk web .` on :8080, persistent sessions
-setup_venv.sh              creates .adk_env, installs deps, pulls the model
-db/                        local SQLite session store (git-ignored)
-tests/                     offline pytest suite + manual TEST-CASES.md
-.claude/                   SessionStart hook for Claude Code on the web
+  card_tools.py             deterministic routing / lookup / reward-estimate tools
+  spend_tracker.py          session-state cap & threshold tracker
+  duckduckgo_search.py      live offers/devaluation web search
+config.py                   reads config/model.config -> MODEL (Ollama/Gemini)
+run.sh                      boots Ollama + `adk web .` on :8080, persistent sessions
+setup_venv.sh               full first-time setup (env + deps + pulls the model)
+scripts/setup-env.sh        shared env bootstrap used by every tool's session hook
+db/                         local SQLite session store (git-ignored)
+tests/                      offline pytest suite + manual TEST-CASES.md
+AGENTS.md                   contributor guide for AI coding tools (single source of truth)
+CLAUDE.md / GEMINI.md       thin pointers that import AGENTS.md
+CONTRIBUTING.md             how to contribute
+.claude/ .gemini/ .agents/  per-tool SessionStart hooks (all call scripts/setup-env.sh)
 ```
 
-## 🧪 Testing
+## Testing
 
 The deterministic core is covered by a fast, fully-offline pytest suite (no LLM,
 no network):
@@ -271,7 +273,7 @@ including a test that registers a brand-new card purely via config data to prove
 the engine is config-driven. End-to-end prompts live in
 [`tests/TEST-CASES.md`](tests/TEST-CASES.md).
 
-## 🎨 Linting & formatting
+## Linting & formatting
 
 [ruff](https://docs.astral.sh/ruff/) (linter) and
 [black](https://black.readthedocs.io/) (formatter) are installed with the
@@ -283,18 +285,20 @@ ruff check .       # lint
 black .            # format  (black --check . to verify only)
 ```
 
-## 🗺️ Roadmap
+## Roadmap
 
 - [ ] Multi-card comparison ("show me the top 3 for this spend").
 - [ ] Per-card fee-waiver progress tracking.
 - [ ] Optional natural-language import of a card's terms into `cards.config`.
 
-## 🤝 Contributing
+## Contributing
 
-Issues and PRs welcome. Please run `ruff check .`, `black .`, and
-`python -m pytest tests/ -q` before opening a PR. For new cards or rules, prefer
-editing `config/cards.config` over adding code.
+Contributions are welcome. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup,
+workflow, and code-style details, and **[AGENTS.md](AGENTS.md)** if you're using
+an AI coding tool. In short: prefer editing `config/cards.config` over adding
+code, and run `ruff check .`, `black .`, and `python -m pytest tests/ -q` before
+opening a PR.
 
-## 📄 License
+## License
 
 [MIT](LICENSE) © 2026 Indranil Chandra.

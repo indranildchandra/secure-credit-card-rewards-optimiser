@@ -1,0 +1,13 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "./.gemini/hooks/session-start.sh",
+        "name": "Bootstrap project environment",
+        "description": "Creates .adk_env and installs dependencies so tests and linters run.",
+        "timeout": 300000
+      }
+    ]
+  }
+}
