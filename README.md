@@ -405,6 +405,7 @@ All tools are plain Python functions exposed to the agent via ADK.
 | `list_configured_cards` | `() -> dict` | Names of cards already in `config/cards.config`. |
 | `save_card` | `(card_json: str) -> str` | Validates and writes one card entry into the config (atomic). |
 | `add_decision_rule` | `(rule_json: str) -> str` | Validates and adds/replaces a routing rule in the decision matrix. |
+| `remove_card` | `(card_name: str) -> str` | Removes a card and any routing rules that pointed at it. |
 
 ## Project structure
 
@@ -471,9 +472,12 @@ black .            # format  (black --check . to verify only)
 
 - [x] Multi-card comparison ("show me the top 3 for this spend").
 - [x] Per-card fee-waiver progress tracking.
-- [x] Natural-language import of a card's terms into `cards.config`.
-- [ ] Auto-detect category from a pasted merchant name / receipt line.
-- [ ] Optional export of monthly spend + rewards summary.
+- [x] Natural-language import / removal of cards in `cards.config`.
+- [x] Config validation (fail-fast) and CI (ruff + black + pytest).
+- [x] Eligibility-aware value model (min-txn / excluded-category / cap-exhaustion).
+- [ ] True net-cost (price − reward − fees + forex) per card.
+- [ ] Local CSV/statement import to populate the spend log (no mailbox access).
+- [ ] Automated agent-level (end-to-end) evals against an offline judge model.
 
 ## Contributing
 

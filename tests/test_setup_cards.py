@@ -13,8 +13,8 @@ import setup_cards
 
 def test_agent_wiring():
     assert setup_cards.root_agent.name == "card_setup"
-    # ddg_search + the three config-writer tools.
-    assert len(setup_cards.root_agent.tools) == 4
+    # ddg_search + the four config-writer tools (list/save/add_rule/remove).
+    assert len(setup_cards.root_agent.tools) == 5
     # The confirm-before-write gate must be wired.
     assert setup_cards.root_agent.before_tool_callback is not None
 
@@ -32,6 +32,15 @@ def test_is_affirmative_word_boundary():
     # 'yesterday' must NOT count as 'yes'.
     assert not setup_cards._is_affirmative("yesterday I spent 5000 at Croma")
     assert not setup_cards._is_affirmative("tell me about my HSBC card")
+
+
+def test_is_affirmative_negation_aware():
+    # F10 regression: a negated message must NOT count as confirmation, even
+    # though it contains an affirmation token like "correct"/"approve"/"save".
+    assert not setup_cards._is_affirmative("no, that's not correct")
+    assert not setup_cards._is_affirmative("this is not ok, don't save it")
+    assert not setup_cards._is_affirmative("do not approve this")
+    assert not setup_cards._is_affirmative("wrong, cancel that")
 
 
 def test_write_gate_blocks_without_confirmation():

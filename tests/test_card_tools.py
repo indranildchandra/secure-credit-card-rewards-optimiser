@@ -119,3 +119,48 @@ def test_compare_cards_top_n_count_and_order():
 def test_compare_cards_top_n_clamped():
     res = compare_cards_for_spend("dining", 2000, top_n=99)
     assert len(res["top"]) == 11  # clamped to the number of cards
+
+
+def test_keyword_matching_is_word_boundary():
+    # F2 regression: 'eat' must not match 'great', 'gold' must not match 'goldman'.
+    assert find_cards_for_category("Great Clips salon", 800)["matches"] == []
+    assert find_cards_for_category("goldman advisory", 5000)["matches"] == []
+
+
+def test_estimate_below_min_txn_earns_nothing():
+    # F1 regression: Axis RuPay needs Rs.2,000 on UPI; below that it earns 0.
+    low = estimate_reward_value("Axis RuPay", 1000, "upi")
+    assert low["rate_pct"] == 0.0 and low["eligible"] is False
+    high = estimate_reward_value("Axis RuPay", 3000, "upi")
+    assert high["rate_pct"] > 0 and high["eligible"] is True
+
+
+def test_estimate_excluded_category_earns_nothing():
+    r = estimate_reward_value("Axis RuPay", 5000, "rent")
+    assert r["rate_pct"] == 0.0 and r["eligible"] is False
+
+
+def test_compare_ranks_ineligible_card_last():
+    # A Rs.1,000 UPI spend: Axis RuPay (needs Rs.2,000) must not outrank earners.
+    res = compare_cards_for_spend("upi", 1000, top_n=11)
+    by_card = {r["card"]: r for r in res["top"]}
+    assert by_card["Axis RuPay"]["approx_value_rupees"] == 0.0
+    assert res["top"][0]["approx_value_rupees"] > 0  # the winner actually earns
+
+
+class _FakeCtx:
+    def __init__(self):
+        self.state = {}
+
+
+def test_compare_is_cap_aware_when_state_available():
+    from tools.spend_tracker import record_spend
+
+    ctx = _FakeCtx()
+    # Exhaust the HSBC combined cap (Rs.12k eligible > Rs.10k).
+    record_spend(ctx, "dining", 8000, "HSBC Live+")
+    record_spend(ctx, "grocery", 4000, "HSBC Live+")
+    res = compare_cards_for_spend("dining", 2000, top_n=11, tool_context=ctx)
+    hsbc = next(r for r in res["top"] if r["card"] == "HSBC Live+")
+    # Cap exhausted -> dining now earns base 1.5%, not 10%.
+    assert hsbc["rate_pct"] == 1.5

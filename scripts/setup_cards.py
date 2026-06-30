@@ -45,6 +45,7 @@ from tools.config_writer import (  # noqa: E402
     list_configured_cards,
     save_card,
     add_decision_rule,
+    remove_card,
 )
 
 load_dotenv(os.path.join(_ROOT, ".env"))
@@ -62,7 +63,7 @@ SESSION_ID = "setup"
 # message contains an explicit affirmation. This defends against prompt-injection
 # from web-search results: even if a poisoned page tells the model to save, the
 # write is blocked unless the actual user just confirmed it.
-_WRITE_TOOLS = {"save_card", "add_decision_rule"}
+_WRITE_TOOLS = {"save_card", "add_decision_rule", "remove_card"}
 _AFFIRM_WORDS = {
     "yes",
     "yeah",
@@ -80,6 +81,8 @@ _AFFIRM_WORDS = {
     "save",
     "add",
     "update",
+    "remove",
+    "delete",
 }
 _AFFIRM_PHRASES = (
     "go ahead",
@@ -90,15 +93,40 @@ _AFFIRM_PHRASES = (
     "thats right",
     "go for it",
 )
+# Any of these in the user's message vetoes the affirmation (so "no, that's not
+# correct" or "don't approve" never counts as a yes).
+_NEGATION_WORDS = {
+    "no",
+    "nope",
+    "nah",
+    "not",
+    "don't",
+    "dont",
+    "do n't",
+    "never",
+    "cancel",
+    "stop",
+    "wait",
+    "hold",
+    "incorrect",
+    "wrong",
+}
 
 
 def _is_affirmative(text: str) -> bool:
-    """True if the text contains an explicit confirmation (word-boundary safe, so
-    'yesterday' does not count as 'yes')."""
+    """True only if the text contains an explicit confirmation AND no negation.
+
+    Word-boundary safe ('yesterday' is not 'yes'); negation-aware ('no, that's
+    not correct' is NOT a yes even though it contains 'correct'). Biased toward
+    blocking: if a confirmation is ambiguous, return False and let the agent ask
+    again."""
     t = (text or "").lower()
+    words = set(re.findall(r"[a-z']+", t))
+    if words & _NEGATION_WORDS:
+        return False
     if any(p in t for p in _AFFIRM_PHRASES):
         return True
-    return bool(set(re.findall(r"[a-z']+", t)) & _AFFIRM_WORDS)
+    return bool(words & _AFFIRM_WORDS)
 
 
 def _latest_user_text(tool_context) -> str:
@@ -129,7 +157,13 @@ root_agent = Agent(
     model=MODEL,
     description="Researches the user's credit cards and writes them into config/cards.config.",
     instruction=INSTRUCTION,
-    tools=[ddg_search, list_configured_cards, save_card, add_decision_rule],
+    tools=[
+        ddg_search,
+        list_configured_cards,
+        save_card,
+        add_decision_rule,
+        remove_card,
+    ],
     before_tool_callback=require_confirmation_before_write,
 )
 

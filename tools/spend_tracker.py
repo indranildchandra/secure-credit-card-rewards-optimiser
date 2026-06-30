@@ -102,6 +102,8 @@ def record_spend(
             f"Could not read the amount {amount!r}. Please give it as a number, "
             "e.g. 1500."
         )
+    if amt <= 0:
+        return f"Amount must be a positive number (got {amt:g}); nothing recorded."
 
     month = _current_month()
     log = _get_log(tool_context)

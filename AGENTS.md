@@ -40,7 +40,9 @@ to `scripts/setup-env.sh`, so the environment is identical everywhere.
 | `tools/card_tools.py` | Deterministic routing / lookup / reward / top-N compare tools. |
 | `tools/spend_tracker.py` | Session-state cap, threshold & fee-waiver tracker. |
 | `tools/duckduckgo_search.py` | Live offers/devaluation web search. |
-| `tools/config_writer.py` | Validates + writes `cards.config` (used by onboarding). |
+| `tools/config_writer.py` | Validates + writes/removes cards in `cards.config` (onboarding). |
+| `data/cards.py` (`validate_config`) | Fail-fast structural validation of `cards.config` at load. |
+| `.github/workflows/ci.yml` | CI: ruff + black + pytest on push/PR. |
 | `config.py` | Reads `config/model.config` → `MODEL`. |
 | `tests/` | Offline pytest suite + `TEST-CASES.md`. |
 | `scripts/setup-env.sh` | Shared environment bootstrap. |

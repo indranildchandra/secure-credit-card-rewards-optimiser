@@ -8,9 +8,16 @@ which keeps results reliable on small local models.
 All functions return JSON-serialisable dicts/lists.
 """
 
+import re
 from typing import Optional
 
 from data.cards import CARDS, CARD_ALIASES, DECISION_MATRIX
+
+
+def _keyword_in_text(keyword: str, text: str) -> bool:
+    """Whole-word(s) match, so 'eat' does not match 'great' and 'gold' does not
+    match 'goldman'. Multi-word keywords (e.g. 'food delivery') match as a unit."""
+    return re.search(rf"\b{re.escape(keyword)}\b", text) is not None
 
 
 def _resolve_card_name(card_name: str) -> Optional[str]:
@@ -80,7 +87,7 @@ def find_cards_for_category(merchant_or_category: str, amount: float = 0.0) -> d
             if rule.get("max_amount") is not None and amount >= rule["max_amount"]:
                 continue
         # Keyword match + a simple score (number of keyword hits, longer = stronger).
-        hits = [kw for kw in rule["keywords"] if kw in text]
+        hits = [kw for kw in rule["keywords"] if _keyword_in_text(kw, text)]
         if not hits:
             continue
         score = sum(len(kw) for kw in hits)
@@ -157,19 +164,45 @@ def estimate_reward_value(card_name: str, amount: float, category: str = "") -> 
         category: Optional merchant/category hint to pick the right rate.
 
     Returns:
-        dict with ``card``, ``amount``, ``rate_pct``, ``approx_value_rupees``
-        and a ``basis`` explanation, or an ``error`` for unknown cards.
+        dict with ``card``, ``amount``, ``rate_pct``, ``approx_value_rupees``,
+        ``eligible`` and a ``basis`` explanation, or an ``error`` for unknown cards.
     """
     canonical = _resolve_card_name(card_name)
     if not canonical:
         return {"error": f"Unknown card: {card_name}"}
 
+    card = CARDS[canonical]
     cat = (category or "").lower()
+
+    # Eligibility first (config-driven): some cards earn NOTHING below a minimum
+    # transaction value, or on excluded categories. Without this, a Rs.1,000 UPI
+    # spend would wrongly score Axis RuPay (which needs Rs.2,000) as earning.
+    min_txn = card.get("min_txn", 0)
+    excluded = [c.lower() for c in card.get("no_reward_categories", [])]
+    if min_txn and amount < min_txn:
+        return {
+            "card": canonical,
+            "amount": amount,
+            "rate_pct": 0.0,
+            "approx_value_rupees": 0.0,
+            "eligible": False,
+            "basis": f"earns no rewards below the Rs.{min_txn:,.0f} minimum.",
+        }
+    if excluded and any(_keyword_in_text(x, cat) for x in excluded):
+        return {
+            "card": canonical,
+            "amount": amount,
+            "rate_pct": 0.0,
+            "approx_value_rupees": 0.0,
+            "eligible": False,
+            "basis": "this category earns no rewards on this card.",
+        }
+
     # Value-back rates come from the card's "value_back" block in cards.config:
     #   {top_rate, top_keywords, base_rate}
     # — the category top rate applies when the category matches a top keyword,
     # otherwise the base rate. Fully config-driven; no card names hardcoded here.
-    vb = CARDS[canonical].get("value_back", {})
+    vb = card.get("value_back", {})
     top = vb.get("top_rate", 1.0)
     top_kw = vb.get("top_keywords", [])
     base = vb.get("base_rate", top)
@@ -181,21 +214,24 @@ def estimate_reward_value(card_name: str, amount: float, category: str = "") -> 
         "amount": amount,
         "rate_pct": rate,
         "approx_value_rupees": value,
+        "eligible": True,
         "basis": ("category top rate" if matched_top else "base rate")
         + " — approximate; verify exact terms with get_card_details/ddg_search.",
     }
 
 
 def compare_cards_for_spend(
-    merchant_or_category: str, amount: float, top_n: int = 3
+    merchant_or_category: str, amount: float, top_n: int = 3, tool_context=None
 ) -> dict:
     """Rank the whole portfolio for a spend and return the top N cards by value.
 
     Use this for "show me the top 3 cards for this" style questions. Every card is
-    scored with its configured value-back rate for the category; the result is
-    sorted by approximate Rupee value. The decision-matrix primary is flagged so
-    you can call out routing nuances (UPI tiers, SmartBuy, etc.) the raw value
-    ranking doesn't capture.
+    scored with its configured value-back rate for the category (cards that earn
+    nothing for this spend — below a minimum or an excluded category — score 0 and
+    sink). When session state is available, a card whose bonus-category cap is
+    already exhausted this month is scored at its base rate. The decision-matrix
+    primary is flagged so you can call out routing nuances the raw value ranking
+    doesn't capture.
 
     Args:
         merchant_or_category: Where/what the spend is (e.g. "Swiggy", "Amazon").
@@ -213,11 +249,24 @@ def compare_cards_for_spend(
     ranked = []
     for name in CARDS:
         ev = estimate_reward_value(name, amount, merchant_or_category)
+        rate = ev["rate_pct"]
+        value = ev["approx_value_rupees"]
+        # Cap-aware down-ranking: if this card's combined cashback cap is already
+        # exhausted, its bonus categories now earn only the base rate.
+        if tool_context is not None and ev.get("eligible", True):
+            from tools.spend_tracker import check_cap_status  # lazy: avoid cycle
+
+            cap = check_cap_status(tool_context, name)
+            if cap.get("exhausted"):
+                base = CARDS[name].get("value_back", {}).get("base_rate", rate)
+                if rate > base:
+                    rate = base
+                    value = round(amount * base / 100.0, 2)
         ranked.append(
             {
                 "card": name,
-                "rate_pct": ev["rate_pct"],
-                "approx_value_rupees": ev["approx_value_rupees"],
+                "rate_pct": rate,
+                "approx_value_rupees": value,
                 "is_matrix_primary": name == primary,
             }
         )

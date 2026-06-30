@@ -118,6 +118,15 @@ def test_record_spend_rejects_non_numeric_amount():
     assert get_spend_summary(ctx)["by_category"] == {}  # nothing recorded
 
 
+def test_record_spend_rejects_non_positive_amount():
+    # F5 regression: a negative amount must not be recorded (it could un-exhaust
+    # a cap). Zero is rejected too.
+    ctx = FakeToolContext()
+    assert "positive" in record_spend(ctx, "dining", "-5000", "HSBC Live+")
+    assert "positive" in record_spend(ctx, "dining", 0, "HSBC Live+")
+    assert get_spend_summary(ctx)["by_category"] == {}
+
+
 def test_scapia_threshold_progress():
     ctx = FakeToolContext()
     record_spend(ctx, "travel", 12000, "Scapia Visa")

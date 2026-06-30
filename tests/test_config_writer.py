@@ -121,3 +121,19 @@ def test_add_decision_rule_replaces_same_category(temp_config):
     assert "Replaced" in msg
     matrix = _read(temp_config)["decision_matrix"]
     assert len(matrix) == 1 and matrix[0]["strategy"] == "updated"
+
+
+def test_remove_card_and_its_rules(temp_config):
+    cw.add_decision_rule(
+        json.dumps({"category": "X", "keywords": ["x"], "primary": "Existing Card"})
+    )
+    msg = cw.remove_card("Existing Card")
+    assert "Removed card 'Existing Card'" in msg
+    data = _read(temp_config)
+    assert "Existing Card" not in data["cards"]
+    # The routing rule pointing at it is gone too (no dangling rules).
+    assert all(r.get("primary") != "Existing Card" for r in data["decision_matrix"])
+
+
+def test_remove_card_not_found(temp_config):
+    assert "No card named" in cw.remove_card("Ghost Card")

@@ -17,6 +17,7 @@ from .config_writer import (
     list_configured_cards,
     save_card,
     add_decision_rule,
+    remove_card,
 )
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "list_configured_cards",
     "save_card",
     "add_decision_rule",
+    "remove_card",
 ]
