@@ -21,7 +21,7 @@ See [`README.md`](README.md) for the full overview and architecture diagram.
 ./setup_venv.sh
 ```
 
-Every AI tool's SessionStart hook (`.claude/`, `.gemini/`, `.agents/`) delegates
+Every AI tool's SessionStart hook (`.claude/`, `.gemini/`, `.cursor/`) delegates
 to `scripts/setup-env.sh`, so the environment is identical everywhere.
 
 ## Repository map

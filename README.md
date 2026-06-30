@@ -255,7 +255,7 @@ tests/                      offline pytest suite + manual TEST-CASES.md
 AGENTS.md                   contributor guide for AI coding tools (single source of truth)
 CLAUDE.md / GEMINI.md       thin pointers that import AGENTS.md
 CONTRIBUTING.md             how to contribute
-.claude/ .gemini/ .agents/  per-tool SessionStart hooks (all call scripts/setup-env.sh)
+.claude/ .gemini/ .cursor/  per-tool session hooks (all call scripts/setup-env.sh)
 ```
 
 ## Testing

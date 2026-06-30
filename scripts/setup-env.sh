@@ -1,7 +1,7 @@
 #!/bin/bash
 # Shared, idempotent, non-interactive environment bootstrap.
 #
-# Every AI coding tool's session hook (.claude/, .gemini/, .agents/) delegates to
+# Every AI coding tool's session hook (.claude/, .gemini/, .cursor/) delegates to
 # this one script, so "set up the repo" means the same thing everywhere. Safe to
 # run by hand too:  ./scripts/setup-env.sh
 #
