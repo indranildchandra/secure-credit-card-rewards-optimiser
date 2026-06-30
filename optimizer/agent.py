@@ -29,9 +29,11 @@ from tools.spend_tracker import record_spend, get_spend_summary, check_cap_statu
 # Single source of truth: project root .env covers all modules.
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-# The system instruction lives in a plain-text file next to this module so it can
-# be maintained and evolved without touching Python.
-_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "system_instruction.prompt")
+# The system instruction lives in a plain-text file under config/ so it can be
+# maintained and evolved without touching Python.
+_PROMPT_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "config", "system_instruction.prompt"
+)
 with open(_PROMPT_PATH, encoding="utf-8") as _f:
     INSTRUCTION = _f.read()
 

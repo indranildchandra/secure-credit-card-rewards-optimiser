@@ -1,6 +1,6 @@
 """
 Central model configuration for the Credit Card Optimiser agent.
-Edit model.config (in this directory) to switch models — no code changes needed.
+Edit config/model.config to switch models — no code changes needed.
 
 Default is Ollama (fully local / offline) so transaction reasoning never leaves
 the machine. Gemini remains available for those who want it.
@@ -8,9 +8,9 @@ the machine. Gemini remains available for those who want it.
 
 import os
 
-# Parse model.config (simple KEY=VALUE, ignores blank lines and comments)
+# Parse config/model.config (simple KEY=VALUE, ignores blank lines and comments)
 _config = {}
-_config_path = os.path.join(os.path.dirname(__file__), "model.config")
+_config_path = os.path.join(os.path.dirname(__file__), "config", "model.config")
 with open(_config_path) as _f:
     for _line in _f:
         _line = _line.strip()

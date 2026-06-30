@@ -1,9 +1,9 @@
 """
 Credit card knowledge base loader.
 
-The actual card data lives in ``cards.config`` (JSON) right next to this file so
-it can be edited and maintained without touching any Python. This module loads
-that config and exposes three structures used by the deterministic tools:
+The actual card data lives in ``config/cards.config`` (JSON) so it can be edited
+and maintained without touching any Python. This module loads that config and
+exposes three structures used by the deterministic tools:
 
 * ``CARDS``           — the "Full Card Reference": each card's rewards, fees and
                         milestones (human-readable), plus two machine-readable
@@ -15,7 +15,7 @@ that config and exposes three structures used by the deterministic tools:
 * ``CARD_ALIASES``    — lowercased name/alias -> canonical card name (for fuzzy
                         lookup); derived from ``CARDS``.
 
-To add or edit a card or routing rule, edit ``cards.config`` only.
+To add or edit a card or routing rule, edit ``config/cards.config`` only.
 Data reflects the matrix as of APRIL 2026; the optimiser performs a live web
 search at query time to surface any newer offers or devaluations.
 """
@@ -23,7 +23,7 @@ search at query time to surface any newer offers or devaluations.
 import json
 import os
 
-_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "cards.config")
+_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "cards.config")
 
 with open(_CONFIG_PATH, encoding="utf-8") as _f:
     _data = json.load(_f)

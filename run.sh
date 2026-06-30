@@ -41,8 +41,8 @@ if [ "${GOOGLE_GENAI_USE_VERTEXAI}" = "TRUE" ]; then
     echo "ADC: configured"
 fi
 
-# Start Ollama in the background if model.config specifies the ollama provider.
-MODEL_CONFIG="$(dirname "$0")/model.config"
+# Start Ollama in the background if config/model.config specifies the ollama provider.
+MODEL_CONFIG="$(dirname "$0")/config/model.config"
 if [ -f "$MODEL_CONFIG" ]; then
     _provider=$(grep -E "^MODEL_PROVIDER=" "$MODEL_CONFIG" | cut -d= -f2 | tr -d '[:space:]')
     _model_name=$(grep -E "^MODEL_NAME=" "$MODEL_CONFIG" | cut -d= -f2 | tr -d '[:space:]')

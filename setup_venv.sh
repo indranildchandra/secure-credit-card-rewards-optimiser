@@ -47,8 +47,8 @@ if [ ! -f .env ]; then
 fi
 
 # --- Ollama check / model pull ---
-_provider=$(grep -E "^MODEL_PROVIDER=" model.config | cut -d= -f2 | tr -d '[:space:]')
-_model_name=$(grep -E "^MODEL_NAME=" model.config | cut -d= -f2 | tr -d '[:space:]')
+_provider=$(grep -E "^MODEL_PROVIDER=" config/model.config | cut -d= -f2 | tr -d '[:space:]')
+_model_name=$(grep -E "^MODEL_NAME=" config/model.config | cut -d= -f2 | tr -d '[:space:]')
 if [ "$_provider" = "ollama" ]; then
     if ! command -v ollama > /dev/null 2>&1; then
         echo "  Ollama is not installed. Install it from https://ollama.com"
