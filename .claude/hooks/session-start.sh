@@ -1,7 +1,8 @@
 #!/bin/bash
-# SessionStart hook: prepare the Python environment so tests run out-of-the-box.
-# Creates a virtualenv (.adk_env), installs dependencies, and puts the venv on
-# PATH for the session. Web (remote) sessions only.
+# SessionStart hook: prepare the Python environment so tests and linters run
+# out-of-the-box. Creates a virtualenv (.adk_env), installs dependencies
+# (including the ruff linter and black formatter), and puts the venv on PATH for
+# the session. Web (remote) sessions only.
 set -euo pipefail
 
 # Only run in Claude Code on the web (remote) sessions.
@@ -27,4 +28,8 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   echo "export PATH=\"${CLAUDE_PROJECT_DIR:-.}/.adk_env/bin:\$PATH\"" >> "$CLAUDE_ENV_FILE"
 fi
 
-echo "session-start hook: dependencies installed (.adk_env ready)"
+# Confirm the lint/format tools are available (non-fatal — never blocks startup).
+ruff --version || true
+black --version || true
+
+echo "session-start hook: dependencies installed (.adk_env ready; ruff + black available)"

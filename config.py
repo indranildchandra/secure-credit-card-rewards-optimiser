@@ -27,6 +27,7 @@ if "OLLAMA_API_BASE" in _config:
 
 if _provider == "ollama":
     from google.adk.models.lite_llm import LiteLlm
+
     MODEL = LiteLlm(model=f"ollama_chat/{_model_name}")
 else:
     MODEL = _model_name
@@ -38,9 +39,11 @@ else:
 # Gemini:  uses google_search (server-side grounding, best quality)
 if _provider == "ollama":
     from tools.duckduckgo_search import ddg_search
+
     SEARCH_TOOLS = [ddg_search]
 else:
     from google.adk.tools import google_search
+
     SEARCH_TOOLS = [google_search]
 
 IS_GEMINI = _provider != "ollama"

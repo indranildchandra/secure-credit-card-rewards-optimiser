@@ -46,8 +46,9 @@ def _month_bucket(log: dict, month: str) -> dict:
     return bucket
 
 
-def record_spend(tool_context: ToolContext, category: str, amount: float,
-                 card: str = "") -> str:
+def record_spend(
+    tool_context: ToolContext, category: str, amount: float, card: str = ""
+) -> str:
     """Record a spend for the current month so caps/thresholds can be tracked.
 
     Args:
@@ -63,19 +64,24 @@ def record_spend(tool_context: ToolContext, category: str, amount: float,
     bucket = _month_bucket(log, month)
 
     cat = (category or "uncategorised").strip().lower()
-    bucket["by_category"][cat] = round(bucket["by_category"].get(cat, 0.0) + float(amount), 2)
+    bucket["by_category"][cat] = round(
+        bucket["by_category"].get(cat, 0.0) + float(amount), 2
+    )
 
     canonical = _resolve_card_name(card) if card else None
     if canonical:
         bucket["by_card"][canonical] = round(
-            bucket["by_card"].get(canonical, 0.0) + float(amount), 2)
+            bucket["by_card"].get(canonical, 0.0) + float(amount), 2
+        )
 
     # Reassign so ADK detects the state mutation and persists it.
     tool_context.state[_STATE_KEY] = log
 
     card_txt = f" on {canonical}" if canonical else ""
-    return (f"Recorded Rs.{float(amount):,.0f} in '{cat}'{card_txt} for {month}. "
-            f"Month total for '{cat}': Rs.{bucket['by_category'][cat]:,.0f}.")
+    return (
+        f"Recorded Rs.{float(amount):,.0f} in '{cat}'{card_txt} for {month}. "
+        f"Month total for '{cat}': Rs.{bucket['by_category'][cat]:,.0f}."
+    )
 
 
 def get_spend_summary(tool_context: ToolContext) -> dict:
@@ -86,9 +92,11 @@ def get_spend_summary(tool_context: ToolContext) -> dict:
     """
     month = _current_month()
     bucket = _get_log(tool_context).get(month, {"by_category": {}, "by_card": {}})
-    return {"month": month,
-            "by_category": bucket.get("by_category", {}),
-            "by_card": bucket.get("by_card", {})}
+    return {
+        "month": month,
+        "by_category": bucket.get("by_category", {}),
+        "by_card": bucket.get("by_card", {}),
+    }
 
 
 def check_cap_status(tool_context: ToolContext, card_name: str) -> dict:
@@ -122,8 +130,7 @@ def check_cap_status(tool_context: ToolContext, card_name: str) -> dict:
         rate = caps.get("high_rate", 0.10)
         cap_value = caps.get("combined_monthly_cashback_cap", 1000)
         eligible_spend = sum(
-            amt for cat, amt in by_cat.items()
-            if any(ec in cat for ec in eligible_cats)
+            amt for cat, amt in by_cat.items() if any(ec in cat for ec in eligible_cats)
         )
         cashback_earned = round(min(eligible_spend * rate, cap_value), 2)
         remaining = round(max(cap_value - cashback_earned, 0.0), 2)
@@ -135,10 +142,12 @@ def check_cap_status(tool_context: ToolContext, card_name: str) -> dict:
             "cashback_earned": cashback_earned,
             "cashback_remaining": remaining,
             "exhausted": remaining <= 0,
-            "note": (f"Cap exhausted — these categories now earn only 1.5%."
-                     if remaining <= 0 else
-                     f"~Rs.{spend_to_cap:,.0f} of eligible spend hits the cap; "
-                     f"Rs.{round(spend_to_cap - eligible_spend, 2):,.0f} of headroom left."),
+            "note": (
+                "Cap exhausted — these categories now earn only 1.5%."
+                if remaining <= 0
+                else f"~Rs.{spend_to_cap:,.0f} of eligible spend hits the cap; "
+                f"Rs.{round(spend_to_cap - eligible_spend, 2):,.0f} of headroom left."
+            ),
         }
 
     if canonical == "Scapia Visa":
@@ -152,16 +161,22 @@ def check_cap_status(tool_context: ToolContext, card_name: str) -> dict:
             "spend_this_month": round(counted, 2),
             "remaining_to_unlock": remaining,
             "met": remaining <= 0,
-            "note": ("Lounge threshold met for the month." if remaining <= 0
-                     else f"Spend Rs.{remaining:,.0f} more this month to keep lounge access."),
+            "note": (
+                "Lounge threshold met for the month."
+                if remaining <= 0
+                else f"Spend Rs.{remaining:,.0f} more this month to keep lounge access."
+            ),
         }
 
     if canonical == "Amex Platinum Travel":
         target = caps.get("annual_milestone_target", 700000)
         year = datetime.now(timezone.utc).strftime("%Y")
         log = _get_log(tool_context)
-        ytd = sum(b.get("by_card", {}).get(canonical, 0.0)
-                  for m, b in log.items() if m.startswith(year))
+        ytd = sum(
+            b.get("by_card", {}).get(canonical, 0.0)
+            for m, b in log.items()
+            if m.startswith(year)
+        )
         remaining = round(max(target - ytd, 0.0), 2)
         return {
             "card": canonical,
@@ -169,11 +184,15 @@ def check_cap_status(tool_context: ToolContext, card_name: str) -> dict:
             "spend_ytd": round(ytd, 2),
             "remaining_to_target": remaining,
             "met": remaining <= 0,
-            "note": ("Annual target reached — stop routing misc spends here."
-                     if remaining <= 0 else
-                     f"Rs.{remaining:,.0f} more to hit the Rs.7 Lakh sweet spot."),
+            "note": (
+                "Annual target reached — stop routing misc spends here."
+                if remaining <= 0
+                else f"Rs.{remaining:,.0f} more to hit the Rs.7 Lakh sweet spot."
+            ),
         }
 
-    return {"card": canonical,
-            "note": "No machine-trackable monthly cap/threshold for this card. "
-                    "See get_card_details for milestones and fee-waiver thresholds."}
+    return {
+        "card": canonical,
+        "note": "No machine-trackable monthly cap/threshold for this card. "
+        "See get_card_details for milestones and fee-waiver thresholds.",
+    }

@@ -119,6 +119,18 @@ python -m pytest tests/ -q        # deterministic, offline
 See [`tests/TEST-CASES.md`](tests/TEST-CASES.md) for the full set of end-to-end
 prompts (core routing, UPI boundaries, nuance checks, and cap-aware flows).
 
+## Linting & formatting
+
+[ruff](https://docs.astral.sh/ruff/) (linter) and
+[black](https://black.readthedocs.io/) (formatter) are installed with the
+dependencies (config in `pyproject.toml`):
+
+```bash
+source .adk_env/bin/activate
+ruff check .       # lint
+black .            # format (or `black --check .` to verify only)
+```
+
 ## Notes
 
 - Card data reflects the **April 2026** matrix; the live search surfaces newer

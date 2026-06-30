@@ -63,23 +63,27 @@ def find_cards_for_category(merchant_or_category: str, amount: float = 0.0) -> d
         if not hits:
             continue
         score = sum(len(kw) for kw in hits)
-        matches.append((
-            score,
-            {
-                "category": rule["category"],
-                "primary": rule["primary"],
-                "strategy": rule["strategy"],
-                "fallback": rule.get("fallback"),
-            },
-        ))
+        matches.append(
+            (
+                score,
+                {
+                    "category": rule["category"],
+                    "primary": rule["primary"],
+                    "strategy": rule["strategy"],
+                    "fallback": rule.get("fallback"),
+                },
+            )
+        )
 
     matches.sort(key=lambda m: m[0], reverse=True)
     ranked = [m[1] for m in matches]
 
     note = ""
     if not ranked:
-        note = ("No specific category matched. For large miscellaneous spends, "
-                "consider 'Amex Platinum Travel' (milestone strategy).")
+        note = (
+            "No specific category matched. For large miscellaneous spends, "
+            "consider 'Amex Platinum Travel' (milestone strategy)."
+        )
     return {
         "query": merchant_or_category,
         "amount": amount,
@@ -100,8 +104,10 @@ def get_card_details(card_name: str) -> dict:
     """
     canonical = _resolve_card_name(card_name)
     if not canonical:
-        return {"error": f"Unknown card: {card_name}",
-                "known_cards": list(CARDS.keys())}
+        return {
+            "error": f"Unknown card: {card_name}",
+            "known_cards": list(CARDS.keys()),
+        }
     return {"name": canonical, **CARDS[canonical]}
 
 
@@ -111,8 +117,10 @@ def list_all_cards() -> list:
     Returns:
         List of {name, when_to_use} dicts.
     """
-    return [{"name": name, "when_to_use": data.get("when_to_use", "")}
-            for name, data in CARDS.items()]
+    return [
+        {"name": name, "when_to_use": data.get("when_to_use", "")}
+        for name, data in CARDS.items()
+    ]
 
 
 def estimate_reward_value(card_name: str, amount: float, category: str = "") -> dict:
@@ -140,16 +148,36 @@ def estimate_reward_value(card_name: str, amount: float, category: str = "") -> 
     # a category-specific top rate we encode (top_rate, top_keywords, base_rate).
     rate_table = {
         "Tata Star SBI Platinum": (3.5, ["star bazaar", "star outlet"], 1.0),
-        "Amex Platinum Travel": (2.0, [], 2.0),  # ~1RP/Rs.50 @ Rs.0.50 + milestone upside
-        "Tata Neu Infinity": (10.0, CARDS["Tata Neu Infinity"].get("tata_brands", []), 1.5),
+        "Amex Platinum Travel": (
+            2.0,
+            [],
+            2.0,
+        ),  # ~1RP/Rs.50 @ Rs.0.50 + milestone upside
+        "Tata Neu Infinity": (
+            10.0,
+            CARDS["Tata Neu Infinity"].get("tata_brands", []),
+            1.5,
+        ),
         "HSBC Live+": (10.0, ["dining", "swiggy", "zomato", "grocery", "food"], 1.5),
-        "HDFC Regalia Gold": (5.0, ["smartbuy", "hotel", "flight", "myntra", "nykaa"], 1.0),
+        "HDFC Regalia Gold": (
+            5.0,
+            ["smartbuy", "hotel", "flight", "myntra", "nykaa"],
+            1.0,
+        ),
         "ICICI AmazonPay": (5.0, ["amazon"], 1.0),
         "Uni GoldX": (1.0, [], 1.0),
         "Scapia Visa": (4.0, ["scapia", "travel"], 2.0),
         "Scapia RuPay": (1.0, ["upi"], 1.0),
-        "Axis Rewards": (3.2, ["apparel", "departmental", "fashion"], 0.32),  # 20RP/Rs.125 @ Rs.0.20
-        "Axis RuPay": (1.0, ["upi"], 1.0),  # 2RP/Rs.200 @ Rs.0.20 ~ 0.2%; treat coarsely
+        "Axis Rewards": (
+            3.2,
+            ["apparel", "departmental", "fashion"],
+            0.32,
+        ),  # 20RP/Rs.125 @ Rs.0.20
+        "Axis RuPay": (
+            1.0,
+            ["upi"],
+            1.0,
+        ),  # 2RP/Rs.200 @ Rs.0.20 ~ 0.2%; treat coarsely
     }
     top, top_kw, base = rate_table.get(canonical, (1.0, [], 1.0))
     matched_top = any(kw.lower() in cat for kw in top_kw) if top_kw else (top == base)
@@ -161,5 +189,5 @@ def estimate_reward_value(card_name: str, amount: float, category: str = "") -> 
         "rate_pct": rate,
         "approx_value_rupees": value,
         "basis": ("category top rate" if matched_top else "base rate")
-                 + " — approximate; verify exact terms with get_card_details/ddg_search.",
+        + " — approximate; verify exact terms with get_card_details/ddg_search.",
     }

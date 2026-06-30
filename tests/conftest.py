@@ -1,5 +1,6 @@
 """Make the project root importable so `import data`, `import tools`, `import config`
 work when running pytest from anywhere."""
+
 import os
 import sys
 

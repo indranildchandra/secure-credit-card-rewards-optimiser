@@ -13,6 +13,7 @@ from tools.spend_tracker import (
 
 class FakeToolContext:
     """Minimal stand-in for google.adk.tools.ToolContext (just a state dict)."""
+
     def __init__(self):
         self.state = {}
 
