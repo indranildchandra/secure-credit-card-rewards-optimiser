@@ -33,6 +33,7 @@ best card** — and does it offline, so your spending data never leaves your lap
 - [Quickstart](#quickstart)
 - [Usage](#usage)
 - [Configure it for your own cards](#configure-it-for-your-own-cards)
+- [Onboard your cards by chatting (natural language)](#onboard-your-cards-by-chatting-natural-language)
 - [Model (Gemma via Ollama)](#model-gemma-via-ollama)
 - [Tools reference](#tools-reference)
 - [Project structure](#project-structure)
@@ -49,10 +50,14 @@ best card** — and does it offline, so your spending data never leaves your lap
 - **Config-driven, bring-your-own-cards** — describe your portfolio once in
   [`config/cards.config`](config/cards.config). Reward rates, category caps, UPI
   bands and routing rules are all data, not code.
+- **Natural-language onboarding** — `python setup_cards.py` interviews you,
+  researches each card's current terms on the web, and writes the config for you.
 - **Reliable on small models** — routing and arithmetic happen in deterministic
   Python tools, so even a 2B-class local model gives consistent answers.
-- **Cap & milestone aware** — tracks shared monthly cashback caps, monthly spend
-  thresholds, and annual milestones across sessions (local SQLite).
+- **Cap, milestone & fee-waiver aware** — tracks shared monthly cashback caps,
+  monthly spend thresholds, annual milestones, and annual fee-waiver progress
+  across sessions (local SQLite).
+- **Top-N comparison** — ask for the best few cards for a spend, not just one.
 - **Live offer check** — a focused web search surfaces the latest offers and
   devaluations, with the query built around _merchant + card names only_.
 - **Zero custom UI** — the interface is the stock **Google ADK Web UI**.
@@ -65,31 +70,37 @@ the network.
 
 ```mermaid
 flowchart TD
-    U["You: 'I am spending Rs.X at [merchant]. Which card?'"] --> AG["optimizer agent<br/>(local Gemma via Ollama)"]
+    U["You ask:<br/>'Spending Rs.X at a merchant — which card?'"] --> AG["optimizer agent<br/>local Gemma via Ollama"]
 
-    subgraph Tools["Deterministic tools (no LLM, no network)"]
+    subgraph Tools["Deterministic tools — no LLM, no network"]
         R["find_cards_for_category"]
+        CMP["compare_cards_for_spend"]
         D["get_card_details"]
         V["estimate_reward_value"]
         C["check_cap_status"]
-        SP["record_spend / get_spend_summary"]
+        FW["check_fee_waiver_status"]
+        SP["record_spend /<br/>get_spend_summary"]
     end
 
     AG --> R
+    AG --> CMP
     AG --> D
     AG --> V
     AG --> C
+    AG --> FW
     AG --> SP
     AG --> WS["ddg_search"]
 
-    R --> CFG[("config/cards.config")]
+    R --> CFG["config/cards.config"]
+    CMP --> CFG
     D --> CFG
     V --> CFG
     C --> CFG
-    SP --> DB[("db/ — SQLite session store")]
-    WS --> NET(("web: latest offers / devaluations"))
+    FW --> CFG
+    SP --> DB["db/ SQLite<br/>session store"]
+    WS --> NET["web:<br/>latest offers / devaluations"]
 
-    AG --> ANS["Answer:<br/>Winner • Reward • Logic • Live Update"]
+    AG --> ANS["Answer:<br/>Winner / Reward / Logic / Live Update"]
 ```
 
 **Request flow:** parse the transaction → route it through the decision matrix →
@@ -141,6 +152,12 @@ The Live Update: No notable changes found for Apple Store + Amex this month.
 _(Illustrative — exact wording depends on your config, tracked spends, and live
 search results.)_
 
+You can also ask for a comparison or a fee-waiver check, e.g.:
+
+> **You:** Show me the top 3 cards for ₹4,000 at Amazon.
+>
+> **You:** Am I close to waiving my HDFC Regalia Gold annual fee?
+
 See [`tests/TEST-CASES.md`](tests/TEST-CASES.md) for ~30 worked prompts covering
 core routing, UPI amount bands, nuance checks, and cap-aware flows.
 
@@ -187,6 +204,24 @@ You can also tune the agent's behaviour in
 [`config/system_instruction.prompt`](config/system_instruction.prompt) — no code
 required.
 
+## Onboard your cards by chatting (natural language)
+
+Don't want to hand-write JSON? Let an agent do the research and write the config
+for you:
+
+```bash
+source .adk_env/bin/activate
+python setup_cards.py        # requires Ollama running with your model
+```
+
+It reverse-prompts you for the cards you hold, does detailed web research on each
+card's current terms (reward rates, caps, milestones, fees and fee-waiver spend,
+UPI/forex nuances, recent devaluations), shows you the proposed entry for
+confirmation, and — once you approve — writes it into `config/cards.config` and
+adds the matching routing rules. Its system prompt lives in
+[`config/setup_cards_instruction.prompt`](config/setup_cards_instruction.prompt).
+Restart `./run.sh` afterwards to load the changes.
+
 ## Model (Gemma via Ollama)
 
 This project targets Google's **Gemma** family running locally on Ollama. The
@@ -215,6 +250,7 @@ All tools are plain Python functions exposed to the agent via ADK.
 | Method | Signature | What it does |
 |--------|-----------|--------------|
 | `find_cards_for_category` | `(merchant_or_category: str, amount: float = 0.0) -> dict` | Matches merchant/category text (and amount band) against the decision matrix; returns ranked `{primary, strategy, fallback}`. |
+| `compare_cards_for_spend` | `(merchant_or_category: str, amount: float, top_n: int = 3) -> dict` | Ranks the whole portfolio by value for a spend; returns the top N (with the decision-matrix primary flagged). |
 | `get_card_details` | `(card_name: str) -> dict` | Full reference for one card (fuzzy/alias name match). |
 | `list_all_cards` | `() -> list` | Every card with a one-line "when to use". |
 | `estimate_reward_value` | `(card_name: str, amount: float, category: str = "") -> dict` | Approximate ₹/% value-back, read from each card's `value_back` config. |
@@ -225,34 +261,45 @@ All tools are plain Python functions exposed to the agent via ADK.
 | `record_spend` | `(tool_context, category: str, amount: float, card: str = "") -> str` | Records a spend for the current month (by category and card). |
 | `get_spend_summary` | `(tool_context) -> dict` | This month's totals by category and card. |
 | `check_cap_status` | `(tool_context, card_name: str) -> dict` | Remaining headroom for the card's configured `tracker` (cap / threshold / milestone). |
+| `check_fee_waiver_status` | `(tool_context, card_name: str) -> dict` | Year-to-date spend vs the card's annual fee-waiver threshold (or lifetime-free). |
 
 ### [`tools/duckduckgo_search.py`](tools/duckduckgo_search.py) — live web search
 | Method | Signature | What it does |
 |--------|-----------|--------------|
 | `ddg_search` | `(query: str) -> str` | Free DuckDuckGo search for the latest offers/devaluations. No API key; the model authors a focused _merchant + card_ query. |
 
+### [`tools/config_writer.py`](tools/config_writer.py) — used by `setup_cards.py` onboarding
+| Method | Signature | What it does |
+|--------|-----------|--------------|
+| `list_configured_cards` | `() -> dict` | Names of cards already in `config/cards.config`. |
+| `save_card` | `(card_json: str) -> str` | Validates and writes one card entry into the config (atomic). |
+| `add_decision_rule` | `(rule_json: str) -> str` | Validates and adds/replaces a routing rule in the decision matrix. |
+
 ## Project structure
 
 ```
 config/
-  model.config              provider/model selection (Gemma via Ollama)
-  cards.config              your card knowledge base (Full Reference + Decision Matrix)
-  system_instruction.prompt the agent's system prompt
+  model.config               provider/model selection (Gemma via Ollama)
+  cards.config               your card knowledge base (Full Reference + Decision Matrix)
+  system_instruction.prompt  the optimiser agent's system prompt
+  setup_cards_instruction.prompt  the onboarding agent's system prompt
 optimizer/
-  agent.py                  ADK root_agent — orchestrates tools, formats the answer
+  agent.py                   ADK root_agent — orchestrates tools, formats the answer
 data/
-  cards.py                  loads config/cards.config and derives lookup helpers
+  cards.py                   loads config/cards.config and derives lookup helpers
 tools/
-  card_tools.py             deterministic routing / lookup / reward-estimate tools
-  spend_tracker.py          session-state cap & threshold tracker
-  duckduckgo_search.py      live offers/devaluation web search
-config.py                   reads config/model.config -> MODEL (Ollama/Gemini)
-run.sh                      boots Ollama + `adk web .` on :8080, persistent sessions
-setup_venv.sh               full first-time setup (env + deps + pulls the model)
-scripts/setup-env.sh        shared env bootstrap used by every tool's session hook
-db/                         local SQLite session store (git-ignored)
-tests/                      offline pytest suite + manual TEST-CASES.md
-AGENTS.md                   contributor guide for AI coding tools (single source of truth)
+  card_tools.py              deterministic routing / lookup / reward / compare tools
+  spend_tracker.py           session-state cap, threshold & fee-waiver tracker
+  duckduckgo_search.py       live offers/devaluation web search
+  config_writer.py           validates + writes cards.config (used by onboarding)
+config.py                    reads config/model.config -> MODEL (Ollama/Gemini)
+setup_cards.py               natural-language card onboarding CLI
+run.sh                       boots Ollama + `adk web .` on :8080, persistent sessions
+setup_venv.sh                full first-time setup (env + deps + pulls the model)
+scripts/setup-env.sh         shared env bootstrap used by every tool's session hook
+db/                          local SQLite session store (git-ignored)
+tests/                       offline pytest suite + manual TEST-CASES.md
+AGENTS.md                    contributor guide for AI coding tools (single source of truth)
 CLAUDE.md / GEMINI.md       thin pointers that import AGENTS.md
 CONTRIBUTING.md             how to contribute
 .claude/ .gemini/ .cursor/  per-tool session hooks (all call scripts/setup-env.sh)
@@ -287,9 +334,11 @@ black .            # format  (black --check . to verify only)
 
 ## Roadmap
 
-- [ ] Multi-card comparison ("show me the top 3 for this spend").
-- [ ] Per-card fee-waiver progress tracking.
-- [ ] Optional natural-language import of a card's terms into `cards.config`.
+- [x] Multi-card comparison ("show me the top 3 for this spend").
+- [x] Per-card fee-waiver progress tracking.
+- [x] Natural-language import of a card's terms into `cards.config`.
+- [ ] Auto-detect category from a pasted merchant name / receipt line.
+- [ ] Optional export of monthly spend + rewards summary.
 
 ## Contributing
 

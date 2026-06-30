@@ -70,6 +70,21 @@ the *merchant + card* (not your raw sentence).
 | 30 | Tell me everything about HSBC Live+. | Returns rewards, the Rs.1,000 combined cap, fees (uses `get_card_details`). |
 | 31 | I am spending Rs.50,000 at Croma but Tata Neu Infinity is not accepted. Which card? | Falls back to Tata Star SBI Platinum (5% at Croma). |
 | 32 | Compare the reward on Rs.20,000 at Amazon between ICICI AmazonPay and Uni GoldX. | ICICI wins (5% vs 1%); uses `estimate_reward_value`. |
+| 33 | Show me the top 3 cards for Rs.4,000 at Amazon. | Ranked list led by ICICI AmazonPay (uses `compare_cards_for_spend`). |
+| 34 | What are the best few cards for Rs.2,000 dining? | Ranked list led by HSBC Live+. |
+
+### 2e. Fee-waiver questions (uses `check_fee_waiver_status`)
+
+| #  | Prompt | What to look for |
+|----|--------|------------------|
+| 35 | Is my ICICI AmazonPay annual fee waived? | Reports it's lifetime-free. |
+| 36 | How close am I to waiving my HDFC Regalia Gold fee? | After recording spends, reports YTD vs the Rs.4 Lakh threshold. |
+
+### Onboarding (run separately: `python setup_cards.py`)
+
+- "I have an HDFC Swiggy card and an SBI Cashback card." → the agent researches
+  each card on the web, proposes a `cards.config` entry for your confirmation,
+  then saves it and adds routing rules. Restart `./run.sh` to load them.
 
 ### 2d. Cap-aware flows (exercise the spend tracker + session state)
 

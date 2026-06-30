@@ -163,3 +163,56 @@ def estimate_reward_value(card_name: str, amount: float, category: str = "") -> 
         "basis": ("category top rate" if matched_top else "base rate")
         + " — approximate; verify exact terms with get_card_details/ddg_search.",
     }
+
+
+def compare_cards_for_spend(
+    merchant_or_category: str, amount: float, top_n: int = 3
+) -> dict:
+    """Rank the whole portfolio for a spend and return the top N cards by value.
+
+    Use this for "show me the top 3 cards for this" style questions. Every card is
+    scored with its configured value-back rate for the category; the result is
+    sorted by approximate Rupee value. The decision-matrix primary is flagged so
+    you can call out routing nuances (UPI tiers, SmartBuy, etc.) the raw value
+    ranking doesn't capture.
+
+    Args:
+        merchant_or_category: Where/what the spend is (e.g. "Swiggy", "Amazon").
+        amount: Transaction amount in Rupees.
+        top_n: How many cards to return (default 3; clamped to 1..number of cards).
+
+    Returns:
+        dict with ``query``, ``amount``, ``matrix_primary`` (the matrix's pick),
+        and ``top`` — a ranked list of
+        {rank, card, rate_pct, approx_value_rupees, is_matrix_primary}.
+    """
+    matrix = find_cards_for_category(merchant_or_category, amount)
+    primary = matrix["matches"][0]["primary"] if matrix["matches"] else None
+
+    ranked = []
+    for name in CARDS:
+        ev = estimate_reward_value(name, amount, merchant_or_category)
+        ranked.append(
+            {
+                "card": name,
+                "rate_pct": ev["rate_pct"],
+                "approx_value_rupees": ev["approx_value_rupees"],
+                "is_matrix_primary": name == primary,
+            }
+        )
+    # Sort by value, then keep the matrix primary ahead of ties.
+    ranked.sort(
+        key=lambda r: (r["approx_value_rupees"], r["is_matrix_primary"]), reverse=True
+    )
+
+    n = max(1, min(int(top_n) if top_n else 3, len(ranked)))
+    top = []
+    for i, row in enumerate(ranked[:n], 1):
+        top.append({"rank": i, **row})
+
+    return {
+        "query": merchant_or_category,
+        "amount": amount,
+        "matrix_primary": primary,
+        "top": top,
+    }

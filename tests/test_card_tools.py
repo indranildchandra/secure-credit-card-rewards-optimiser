@@ -9,6 +9,7 @@ from tools.card_tools import (
     get_card_details,
     list_all_cards,
     estimate_reward_value,
+    compare_cards_for_spend,
 )
 
 
@@ -100,3 +101,21 @@ def test_estimate_reward_value_base_rate():
     # Amazon card on a non-Amazon spend falls to its base rate (1%).
     r = estimate_reward_value("ICICI AmazonPay", 10000, "fuel")
     assert r["rate_pct"] == 1.0
+
+
+def test_compare_cards_top_n_count_and_order():
+    res = compare_cards_for_spend("amazon", 10000, top_n=3)
+    assert len(res["top"]) == 3
+    # ICICI AmazonPay (5% on Amazon) should top the ranking and be the primary.
+    assert res["top"][0]["card"] == "ICICI AmazonPay"
+    assert res["top"][0]["rank"] == 1
+    assert res["matrix_primary"] == "ICICI AmazonPay"
+    assert res["top"][0]["is_matrix_primary"] is True
+    # Sorted by value descending.
+    values = [r["approx_value_rupees"] for r in res["top"]]
+    assert values == sorted(values, reverse=True)
+
+
+def test_compare_cards_top_n_clamped():
+    res = compare_cards_for_spend("dining", 2000, top_n=99)
+    assert len(res["top"]) == 11  # clamped to the number of cards

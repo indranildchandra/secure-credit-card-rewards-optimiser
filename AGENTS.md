@@ -30,12 +30,15 @@ to `scripts/setup-env.sh`, so the environment is identical everywhere.
 |------|-----------------|
 | `config/cards.config` | **The card knowledge base** (JSON): Full Reference + Decision Matrix. Edit this, not code. |
 | `config/model.config` | Provider/model selection (Gemma via Ollama). |
-| `config/system_instruction.prompt` | The agent's system prompt. |
+| `config/system_instruction.prompt` | The optimiser agent's system prompt. |
+| `config/setup_cards_instruction.prompt` | The onboarding agent's system prompt. |
 | `optimizer/agent.py` | ADK `root_agent`: wires tools, loads the prompt. |
+| `setup_cards.py` | Natural-language onboarding CLI: researches cards, writes `cards.config`. |
 | `data/cards.py` | Loads `config/cards.config`; derives `CARDS`, `DECISION_MATRIX`, `CARD_ALIASES`. |
-| `tools/card_tools.py` | Deterministic routing / lookup / reward-estimate tools. |
-| `tools/spend_tracker.py` | Session-state cap & threshold tracker. |
+| `tools/card_tools.py` | Deterministic routing / lookup / reward / top-N compare tools. |
+| `tools/spend_tracker.py` | Session-state cap, threshold & fee-waiver tracker. |
 | `tools/duckduckgo_search.py` | Live offers/devaluation web search. |
+| `tools/config_writer.py` | Validates + writes `cards.config` (used by onboarding). |
 | `config.py` | Reads `config/model.config` → `MODEL`. |
 | `tests/` | Offline pytest suite + `TEST-CASES.md`. |
 | `scripts/setup-env.sh` | Shared environment bootstrap. |

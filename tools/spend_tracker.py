@@ -212,3 +212,76 @@ def check_cap_status(tool_context: ToolContext, card_name: str) -> dict:
         "card": canonical,
         "note": f"Unknown tracker type '{ttype}' in cards.config for this card.",
     }
+
+
+def check_fee_waiver_status(tool_context: ToolContext, card_name: str) -> dict:
+    """Report progress toward a card's annual fee-waiver threshold.
+
+    Config-driven via each card's ``fee_waiver`` block in cards.config:
+      * ``{"lifetime_free": true}``            — no annual fee.
+      * ``{"annual_spend": N, "fee": "..."}``  — fee waived once YTD spend hits N.
+      * ``{"annual_spend": null, "fee": "..."}`` — annual fee with no spend waiver.
+
+    Args:
+        card_name: Card to check (fuzzy/alias accepted).
+
+    Returns:
+        dict describing the annual fee, the waiver threshold, year-to-date spend
+        on the card, how much more is needed, and whether the fee is waived.
+    """
+    canonical = _resolve_card_name(card_name)
+    if not canonical:
+        return {"error": f"Unknown card: {card_name}"}
+
+    fw = CARDS[canonical].get("fee_waiver")
+    if not fw:
+        return {
+            "card": canonical,
+            "note": "No fee-waiver info configured for this card. "
+            "Add a 'fee_waiver' block in cards.config to enable tracking.",
+        }
+
+    if fw.get("lifetime_free"):
+        return {
+            "card": canonical,
+            "lifetime_free": True,
+            "note": "Lifetime free — no annual fee to waive.",
+        }
+
+    fee = fw.get("fee", "")
+    threshold = fw.get("annual_spend")
+
+    year = datetime.now(timezone.utc).strftime("%Y")
+    log = _get_log(tool_context)
+    ytd = round(
+        sum(
+            b.get("by_card", {}).get(canonical, 0.0)
+            for m, b in log.items()
+            if m.startswith(year)
+        ),
+        2,
+    )
+
+    if not threshold:
+        return {
+            "card": canonical,
+            "annual_fee": fee,
+            "spend_ytd": ytd,
+            "waived": False,
+            "note": f"Annual fee {fee} applies — no spend-based waiver for this card.",
+        }
+
+    remaining = round(max(threshold - ytd, 0.0), 2)
+    return {
+        "card": canonical,
+        "annual_fee": fee,
+        "waiver_threshold": threshold,
+        "spend_ytd": ytd,
+        "remaining_to_waiver": remaining,
+        "waived": remaining <= 0,
+        "note": (
+            f"Fee {fee} is waived — Rs.{threshold:,.0f} annual spend reached."
+            if remaining <= 0
+            else f"Spend Rs.{remaining:,.0f} more this year to waive the {fee} fee."
+        ),
+    }

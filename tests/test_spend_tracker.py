@@ -11,6 +11,7 @@ from tools.spend_tracker import (
     record_spend,
     get_spend_summary,
     check_cap_status,
+    check_fee_waiver_status,
 )
 
 
@@ -114,6 +115,35 @@ def test_card_without_cap():
 def test_unknown_card():
     ctx = FakeToolContext()
     assert "error" in check_cap_status(ctx, "totally fake card")
+
+
+def test_fee_waiver_lifetime_free():
+    ctx = FakeToolContext()
+    status = check_fee_waiver_status(ctx, "ICICI AmazonPay")
+    assert status.get("lifetime_free") is True
+
+
+def test_fee_waiver_progress_not_yet_waived():
+    ctx = FakeToolContext()
+    record_spend(ctx, "grocery", 50000, "HSBC Live+")  # threshold is Rs.2,00,000
+    status = check_fee_waiver_status(ctx, "HSBC Live+")
+    assert status["waived"] is False
+    assert status["spend_ytd"] == 50000.0
+    assert status["remaining_to_waiver"] == 150000.0
+
+
+def test_fee_waiver_reached():
+    ctx = FakeToolContext()
+    record_spend(ctx, "misc", 200000, "HSBC Live+")
+    status = check_fee_waiver_status(ctx, "HSBC Live+")
+    assert status["waived"] is True
+
+
+def test_fee_waiver_no_spend_based_waiver():
+    ctx = FakeToolContext()
+    status = check_fee_waiver_status(ctx, "Amex Platinum Travel")
+    assert status["waived"] is False
+    assert "no spend-based waiver" in status["note"].lower()
 
 
 def test_config_driven_custom_card(custom_card):

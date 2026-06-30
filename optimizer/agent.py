@@ -23,8 +23,14 @@ from tools.card_tools import (
     get_card_details,
     list_all_cards,
     estimate_reward_value,
+    compare_cards_for_spend,
 )
-from tools.spend_tracker import record_spend, get_spend_summary, check_cap_status
+from tools.spend_tracker import (
+    record_spend,
+    get_spend_summary,
+    check_cap_status,
+    check_fee_waiver_status,
+)
 
 # Single source of truth: project root .env covers all modules.
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
@@ -44,10 +50,12 @@ root_agent = Agent(
     instruction=INSTRUCTION,
     tools=[
         find_cards_for_category,
+        compare_cards_for_spend,
         get_card_details,
         list_all_cards,
         estimate_reward_value,
         check_cap_status,
+        check_fee_waiver_status,
         record_spend,
         get_spend_summary,
         ddg_search,
