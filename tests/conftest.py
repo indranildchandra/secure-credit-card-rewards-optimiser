@@ -1,4 +1,4 @@
-"""Make the adk_in_local package root importable so `import data`, `import tools`
+"""Make the project root importable so `import data`, `import tools`, `import config`
 work when running pytest from anywhere."""
 import os
 import sys

@@ -74,7 +74,8 @@ if [ -f "$MODEL_CONFIG" ]; then
 fi
 
 # SQLite session persistence (caps/spend tracking survive across turns/restarts).
-SESSIONS_DIR="$HOME/.adk/sessions"
+# Kept inside the repo under db/ (gitignored — never committed).
+SESSIONS_DIR="$(dirname "$0")/db"
 mkdir -p "$SESSIONS_DIR"
 DB_FILE="$SESSIONS_DIR/optimizer_sessions.db"
 SESSION_URI="sqlite:///$DB_FILE"

@@ -1,5 +1,5 @@
 # Google Agent Development Kit (ADK)
-# Version pinned by Python version (matching the reference codelab).
+# Version pinned by Python version.
 google-adk==0.3.0; python_version<"3.9"
 google-adk==1.15.1; python_version>="3.9" and python_version<"3.10"
 google-adk==1.33.0; python_version>="3.10"

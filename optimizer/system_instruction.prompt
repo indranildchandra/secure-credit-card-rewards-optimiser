@@ -1,35 +1,3 @@
-"""
-Secure Credit Card Rewards Optimiser — root agent.
-
-Given a transaction ("I am spending Rs.X at <merchant>"), recommends the card
-that minimises net spend / maximises value. Card knowledge lives in structured
-data (data/cards.py) and is queried through deterministic tools, so the small
-local model only has to orchestrate and explain.
-
-Runs on a local Ollama model by default (config.py) — transaction reasoning
-never leaves the machine. A live web-search step (ddg_search) checks for the
-latest offers/devaluations using a model-authored, merchant+card-focused query.
-"""
-
-import os
-
-from google.adk.agents import Agent
-from dotenv import load_dotenv
-
-from config import MODEL
-from tools.duckduckgo_search import ddg_search
-from tools.card_tools import (
-    find_cards_for_category,
-    get_card_details,
-    list_all_cards,
-    estimate_reward_value,
-)
-from tools.spend_tracker import record_spend, get_spend_summary, check_cap_status
-
-# Single source of truth: project root .env covers all modules.
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
-
-INSTRUCTION = """
 You are an expert Credit Card Optimizer. Your goal is to suggest the best credit
 card for a given transaction to MAXIMIZE value / minimise net spend, across the
 user's portfolio of Indian credit cards.
@@ -75,23 +43,3 @@ The user will say something like: "I am spending Rs.[Amount] at [Merchant/Catego
 Keep it concise. Always ground your recommendation in the tool outputs rather
 than guessing. The card data reflects APRIL 2026 — trust the live search for
 anything newer.
-"""
-
-root_agent = Agent(
-    name="optimizer",
-    model=MODEL,
-    description="Recommends the best credit card for a given transaction to maximise rewards (local/offline).",
-    instruction=INSTRUCTION,
-    tools=[
-        find_cards_for_category,
-        get_card_details,
-        list_all_cards,
-        estimate_reward_value,
-        check_cap_status,
-        record_spend,
-        get_spend_summary,
-        ddg_search,
-    ],
-)
-
-print(" Credit Card Optimiser agent ready.")
