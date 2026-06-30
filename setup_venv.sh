@@ -40,12 +40,6 @@ pip install --upgrade pip
 echo " Installing dependencies..."
 pip install -r requirements.txt
 
-# --- .env from template ---
-if [ ! -f .env ]; then
-    cp .env.example .env
-    echo " Created .env from .env.example (no edits needed for the default Ollama setup)."
-fi
-
 # --- Ollama check / model pull ---
 _provider=$(grep -E "^MODEL_PROVIDER=" config/model.config | cut -d= -f2 | tr -d '[:space:]')
 _model_name=$(grep -E "^MODEL_NAME=" config/model.config | cut -d= -f2 | tr -d '[:space:]')

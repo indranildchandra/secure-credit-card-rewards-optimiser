@@ -113,7 +113,7 @@ check any relevant cap/threshold → run a focused live-offer search → reply w
 |---------|------------------|
 | Where the LLM runs | Locally, via Ollama. No transaction data reaches a cloud model. |
 | What leaves the machine | Only the offer-check query — built around _merchant + card names_ (e.g. `"Croma Tata Neu Infinity latest offer June 2026"`), never your raw sentence or amount. |
-| Where your spends are stored | A local SQLite DB under [`db/`](db/), which is git-ignored. |
+| Where your spends are stored | A local SQLite DB under `db/` (created at runtime, git-ignored). |
 | Secrets | None required for the default (Ollama) setup. |
 
 > Want a fully air-gapped run? The web-search tool degrades gracefully — if the
@@ -302,7 +302,7 @@ setup_cards.py               natural-language card onboarding CLI
 run.sh                       boots Ollama + `adk web .` on :8080, persistent sessions
 setup_venv.sh                full first-time setup (env + deps + pulls the model)
 scripts/setup-env.sh         shared env bootstrap used by every tool's session hook
-db/                          local SQLite session store (git-ignored)
+db/                          local SQLite session store (created at runtime, git-ignored)
 tests/                       offline pytest suite + manual TEST-CASES.md
 AGENTS.md                    contributor guide for AI coding tools (single source of truth)
 CLAUDE.md / GEMINI.md       thin pointers that import AGENTS.md

@@ -147,9 +147,8 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
-# Local session database (kept in-repo under db/, but never committed)
-/db/*
-!/db/.gitkeep
+# Local session database (created at runtime by run.sh; never committed)
+/db/
 
 # Environments
 .env
