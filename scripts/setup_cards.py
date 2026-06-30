@@ -2,11 +2,15 @@
 """
 Card onboarding CLI.
 
-Run this to set up (or extend) your portfolio in config/cards.config by simply
-talking to a local agent:
+Set up (or extend) your portfolio in config/cards.config by talking to a local
+agent. Easiest via the shell wrapper:
 
-    python setup_cards.py                 # interactive
-    python setup_cards.py --once "TEXT"   # one-shot (scriptable, no TTY needed)
+    ./scripts/setup_cards.sh                 # interactive
+    ./scripts/setup_cards.sh --once "TEXT"   # one-shot (scriptable, no TTY needed)
+
+or directly:
+
+    python scripts/setup_cards.py [--once "TEXT"]
 
 The agent reverse-prompts you for the cards you hold, researches each card's
 current terms on the web in detail, and — with your confirmation — writes them
@@ -23,24 +27,28 @@ import asyncio
 import os
 import sys
 
-from google.adk.agents import Agent
-from google.adk.runners import InMemoryRunner
-from google.genai import types
-from dotenv import load_dotenv
+# This script lives in scripts/; put the repo root on sys.path so `config`,
+# `tools`, etc. import correctly no matter the working directory.
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-from config import MODEL
-from tools.duckduckgo_search import ddg_search
-from tools.config_writer import (
+from google.adk.agents import Agent  # noqa: E402
+from google.adk.runners import InMemoryRunner  # noqa: E402
+from google.genai import types  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402
+
+from config import MODEL  # noqa: E402
+from tools.duckduckgo_search import ddg_search  # noqa: E402
+from tools.config_writer import (  # noqa: E402
     list_configured_cards,
     save_card,
     add_decision_rule,
 )
 
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+load_dotenv(os.path.join(_ROOT, ".env"))
 
-_PROMPT_PATH = os.path.join(
-    os.path.dirname(__file__), "config", "setup_cards_instruction.prompt"
-)
+_PROMPT_PATH = os.path.join(_ROOT, "config", "setup_cards_instruction.prompt")
 with open(_PROMPT_PATH, encoding="utf-8") as _f:
     INSTRUCTION = _f.read()
 
@@ -88,7 +96,7 @@ def run_once(text: str) -> str:
     """Send a single message to a fresh session and return the reply.
 
     Useful for scripting/testing the onboarding flow without an interactive TTY:
-        python setup_cards.py --once "I have an Amazon Pay ICICI card"
+        python scripts/setup_cards.py --once "I have an Amazon Pay ICICI card"
 
     Raises ModelUnavailable if the agent produced no response.
     """

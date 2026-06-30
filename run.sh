@@ -74,8 +74,10 @@ if [ -f "$MODEL_CONFIG" ]; then
 fi
 
 # SQLite session persistence (caps/spend tracking survive across turns/restarts).
-# Kept inside the repo under db/ (gitignored — never committed).
-SESSIONS_DIR="$(dirname "$0")/db"
+# Kept inside the repo under db/ (gitignored — never committed). Resolve to an
+# absolute path so it stays correct after the later `cd` and regardless of how
+# the script was invoked.
+SESSIONS_DIR="$(cd "$(dirname "$0")" && pwd)/db"
 mkdir -p "$SESSIONS_DIR"
 DB_FILE="$SESSIONS_DIR/optimizer_sessions.db"
 SESSION_URI="sqlite:///$DB_FILE"

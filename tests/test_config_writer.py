@@ -1,4 +1,4 @@
-"""Offline unit tests for the config-writer tools used by setup_cards.py.
+"""Offline unit tests for the config-writer tools used by scripts/setup_cards.py.
 
 Each test points the writer at a temporary config file so the real
 config/cards.config is never touched.

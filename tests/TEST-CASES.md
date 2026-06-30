@@ -80,7 +80,7 @@ the *merchant + card* (not your raw sentence).
 | 35 | Is my ICICI AmazonPay annual fee waived? | Reports it's lifetime-free. |
 | 36 | How close am I to waiving my HDFC Regalia Gold fee? | After recording spends, reports YTD vs the Rs.4 Lakh threshold. |
 
-### Onboarding (run separately: `python setup_cards.py`)
+### Onboarding (run separately: `./scripts/setup_cards.sh`)
 
 - "I have an HDFC Swiggy card and an SBI Cashback card." → the agent researches
   each card on the web, proposes a `cards.config` entry for your confirmation,

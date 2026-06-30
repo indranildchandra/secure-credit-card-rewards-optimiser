@@ -33,7 +33,9 @@ to `scripts/setup-env.sh`, so the environment is identical everywhere.
 | `config/system_instruction.prompt` | The optimiser agent's system prompt. |
 | `config/setup_cards_instruction.prompt` | The onboarding agent's system prompt. |
 | `optimizer/agent.py` | ADK `root_agent`: wires tools, loads the prompt. |
-| `setup_cards.py` | Natural-language onboarding CLI: researches cards, writes `cards.config`. |
+| `scripts/setup_cards.py` | Natural-language onboarding agent: researches cards, writes `cards.config`. |
+| `scripts/setup_cards.sh` | Shell wrapper for the onboarding CLI (activates the venv). |
+| `setup_venv.sh` | Full first-time setup: runs `scripts/setup-env.sh`, then pulls the Ollama model. |
 | `data/cards.py` | Loads `config/cards.config`; derives `CARDS`, `DECISION_MATRIX`, `CARD_ALIASES`. |
 | `tools/card_tools.py` | Deterministic routing / lookup / reward / top-N compare tools. |
 | `tools/spend_tracker.py` | Session-state cap, threshold & fee-waiver tracker. |

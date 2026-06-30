@@ -31,6 +31,9 @@ best card** — and does it offline, so your spending data never leaves your lap
   <em>Sample run: the optimiser working through a "which card for a MacBook Pro?" decision.</em>
 </div>
 
+> For a fuller write-up of the problem and the Google AI stack behind this
+> (Gemma + Google ADK), see [`docs/PROJECT_DESCRIPTION.md`](docs/PROJECT_DESCRIPTION.md).
+
 ## Table of contents
 
 - [Highlights](#highlights)
@@ -56,7 +59,7 @@ best card** — and does it offline, so your spending data never leaves your lap
 - **Config-driven, bring-your-own-cards** — describe your portfolio once in
   [`config/cards.config`](config/cards.config). Reward rates, category caps, UPI
   bands and routing rules are all data, not code.
-- **Natural-language onboarding** — `python setup_cards.py` interviews you,
+- **Natural-language onboarding** — `./scripts/setup_cards.sh` interviews you,
   researches each card's current terms on the web, and writes the config for you.
 - **Reliable on small models** — routing and arithmetic happen in deterministic
   Python tools, so even a 2B-class local model gives consistent answers.
@@ -134,13 +137,32 @@ check any relevant cap/threshold → run a focused live-offer search → reply w
 git clone https://github.com/indranildchandra/secure-credit-card-rewards-optimiser.git
 cd secure-credit-card-rewards-optimiser
 
-chmod +x setup_venv.sh run.sh
-./setup_venv.sh     # creates .adk_env, installs deps, pulls the Gemma model
-./run.sh            # boots Ollama + the ADK Web UI
+# 1. Install — creates .adk_env, installs deps, pulls the Gemma model
+./setup_venv.sh
+
+# 2. Add your cards — chat to the agent; it researches each card and writes the
+#    config for you (skip if you'd rather hand-edit config/cards.config)
+./scripts/setup_cards.sh
+
+# 3. Run — boots Ollama + the ADK Web UI
+./run.sh
 ```
 
 Open <http://localhost:8080>, select the **`optimizer`** agent, and ask away.
 `./run.sh --clean` wipes the local session DB (resets tracked spends/caps).
+
+> **New here?** Step 2 is the fastest way to get going — see
+> [Onboard your cards by chatting](#onboard-your-cards-by-chatting-natural-language).
+> The shipped `config/cards.config` is only an example portfolio.
+
+**Two setup scripts, one job split in two:**
+
+- **`setup_venv.sh`** — the full first-time setup you run by hand. It calls
+  `scripts/setup-env.sh` and then additionally **pulls the Ollama model**.
+- **`scripts/setup-env.sh`** — the shared, idempotent bootstrap (virtualenv +
+  Python deps only, no model pull). Every AI-tool session hook
+  (`.claude/`, `.gemini/`, `.cursor/`) calls this, so the environment is
+  identical everywhere. You rarely run it directly.
 
 ## Usage
 
@@ -216,12 +238,13 @@ Don't want to hand-write JSON? Let an agent do the research and write the config
 for you:
 
 ```bash
-source .adk_env/bin/activate
-python setup_cards.py                          # interactive (requires Ollama)
-python setup_cards.py --once "I have an SBI Cashback card"   # one-shot / scriptable
+./scripts/setup_cards.sh                                # interactive (requires Ollama)
+./scripts/setup_cards.sh --once "I have an SBI Cashback card"   # one-shot / scriptable
 ```
 
-It reverse-prompts you for the cards you hold, does detailed web research on each
+The wrapper activates the project virtualenv and runs `scripts/setup_cards.py`
+(`python scripts/setup_cards.py` works too if your env is already active). It
+reverse-prompts you for the cards you hold, does detailed web research on each
 card's current terms (reward rates, caps, milestones, fees and fee-waiver spend,
 UPI/forex nuances, recent devaluations), shows you the proposed entry for
 confirmation, and — once you approve — writes it into `config/cards.config` and
@@ -279,7 +302,7 @@ All tools are plain Python functions exposed to the agent via ADK.
 |--------|-----------|--------------|
 | `ddg_search` | `(query: str) -> str` | Free DuckDuckGo search for the latest offers/devaluations. No API key; the model authors a focused _merchant + card_ query. |
 
-### [`tools/config_writer.py`](tools/config_writer.py) — used by `setup_cards.py` onboarding
+### [`tools/config_writer.py`](tools/config_writer.py) — used by `scripts/setup_cards.py` onboarding
 | Method | Signature | What it does |
 |--------|-----------|--------------|
 | `list_configured_cards` | `() -> dict` | Names of cards already in `config/cards.config`. |
@@ -304,10 +327,12 @@ tools/
   duckduckgo_search.py       live offers/devaluation web search
   config_writer.py           validates + writes cards.config (used by onboarding)
 config.py                    reads config/model.config -> MODEL (Ollama/Gemini)
-setup_cards.py               natural-language card onboarding CLI
 run.sh                       boots Ollama + `adk web .` on :8080, persistent sessions
-setup_venv.sh                full first-time setup (env + deps + pulls the model)
-scripts/setup-env.sh         shared env bootstrap used by every tool's session hook
+setup_venv.sh                full first-time setup: runs scripts/setup-env.sh + pulls the model
+scripts/
+  setup-env.sh               shared env bootstrap (venv + deps); used by every tool hook
+  setup_cards.py             natural-language card onboarding agent (CLI)
+  setup_cards.sh             shell wrapper that activates the venv and runs the CLI
 db/                          local SQLite session store (created at runtime, git-ignored)
 tests/                       offline pytest suite + manual TEST-CASES.md
 AGENTS.md                    contributor guide for AI coding tools (single source of truth)

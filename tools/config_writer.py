@@ -1,6 +1,6 @@
 """
 Tools for writing to config/cards.config — used by the card-onboarding agent
-(``setup_cards.py``) to persist researched cards and routing rules.
+(``scripts/setup_cards.py``) to persist researched cards and routing rules.
 
 These read and write the JSON config file directly (atomically) rather than the
 in-memory ``data.cards`` snapshot, so each call sees and saves the latest state.
