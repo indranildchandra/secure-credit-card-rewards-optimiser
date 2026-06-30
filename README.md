@@ -185,10 +185,12 @@ The whole application is an ADK agent:
 
 ### 3. Gemini + Google Search grounding — optional cloud path
 For users who don't need the offline guarantee, the same agent runs on **Gemini**
-(`gemini-2.5-flash`) by switching one config value, and in that mode it uses Google
-Search grounding for the live offer/devaluation check instead of the local
-DuckDuckGo tool. This demonstrates the portability ADK provides across Google's
-local (Gemma) and hosted (Gemini) models.
+(`gemini-2.5-flash`) by switching one config value, and in that mode the live
+offer/devaluation check uses **Google Search grounding** instead of the local
+DuckDuckGo tool — wired as an ADK `AgentTool` sub-agent (ADK's built-in
+`google_search` can't be combined with custom function tools in one agent). This
+demonstrates the portability ADK provides across Google's local (Gemma) and hosted
+(Gemini) models.
 
 **TL;DR:** a Gemma model (via Ollama) orchestrates a set of deterministic tools,
 exposed and run through Google ADK and its Web UI, with all card knowledge as

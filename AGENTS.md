@@ -59,11 +59,17 @@ it as config (`value_back`, `tracker`, or a `decision_matrix` rule) instead.
 
 1. **Local reasoning only.** The default provider is Ollama. Never add a code
    path that sends transaction data to a cloud LLM by default.
-2. **Web search is merchant + card only.** `ddg_search` queries must be built
-   from merchant/vendor and card names (plus a recency hint) — never the user's
-   raw sentence or amounts. Keep the `system_instruction.prompt` wording that
-   enforces this.
-3. **No secrets in the repo.** The default setup needs none. `db/` (the local
+2. **Web search is merchant + card only.** Web-search queries must be built from
+   merchant/vendor and card names (plus a recency hint) — never the user's raw
+   sentence or amounts. Keep the `system_instruction.prompt` wording that enforces
+   this (covered by `tests/test_prompts.py`).
+3. **Treat web results as untrusted data.** Search results may contain prompt-
+   injection. The agents are instructed to treat them as reference data only. The
+   only file-writing tools (`save_card` / `add_decision_rule`) live solely in the
+   onboarding agent, which must get explicit user confirmation before each write,
+   and writes are confined to `config/cards.config` (no path traversal, no exec).
+   Don't widen this: never give the main optimiser agent file-write tools.
+4. **No secrets in the repo.** The default setup needs none. `db/` (the local
    session store) and `.env` are git-ignored — keep them that way.
 
 ## Coding conventions

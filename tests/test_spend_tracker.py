@@ -80,6 +80,40 @@ def test_hsbc_cap_exhausted():
     assert status["cashback_remaining"] == 0.0
 
 
+def test_hsbc_cap_counts_merchant_named_food_delivery():
+    # C2 regression: a spend recorded as "swiggy"/"zomato" must count toward the
+    # HSBC combined cap (config synonyms + symmetric category match).
+    ctx = FakeToolContext()
+    record_spend(ctx, "swiggy", 8000, "HSBC Live+")
+    record_spend(ctx, "zomato", 4000, "HSBC Live+")
+    status = check_cap_status(ctx, "HSBC Live+")
+    assert status["eligible_spend_this_month"] == 12000.0
+    assert status["exhausted"] is True
+
+
+def test_hsbc_cap_rate_label_no_trailing_decimal():
+    # C5 regression: 10% should render as "10%", not "10.0%".
+    ctx = FakeToolContext()
+    status = check_cap_status(ctx, "HSBC Live+")
+    assert "@ 10%" in status["cap"]
+
+
+def test_record_spend_parses_formatted_amount():
+    # C3 regression: Indian-formatted / currency-prefixed amounts are accepted.
+    ctx = FakeToolContext()
+    record_spend(ctx, "electronics", "1,50,000", "Amex Platinum Travel")
+    record_spend(ctx, "electronics", "₹ 50,000", "Amex Platinum Travel")
+    summary = get_spend_summary(ctx)
+    assert summary["by_card"]["Amex Platinum Travel"] == 200000.0
+
+
+def test_record_spend_rejects_non_numeric_amount():
+    ctx = FakeToolContext()
+    msg = record_spend(ctx, "dining", "a lot", "HSBC Live+")
+    assert "Could not read the amount" in msg
+    assert get_spend_summary(ctx)["by_category"] == {}  # nothing recorded
+
+
 def test_scapia_threshold_progress():
     ctx = FakeToolContext()
     record_spend(ctx, "travel", 12000, "Scapia Visa")

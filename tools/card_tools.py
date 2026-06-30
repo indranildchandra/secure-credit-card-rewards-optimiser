@@ -14,20 +14,41 @@ from data.cards import CARDS, CARD_ALIASES, DECISION_MATRIX
 
 
 def _resolve_card_name(card_name: str) -> Optional[str]:
-    """Map a possibly-fuzzy card name to its canonical key in CARDS."""
+    """Map a possibly-fuzzy card name to its canonical key in CARDS.
+
+    Matching is ordered from most to least precise to avoid loose mis-matches:
+      1. exact alias (incl. canonical names);
+      2. a known alias appearing in full inside the query
+         (e.g. "use my hsbc live+ card" -> "HSBC Live+");
+      3. a reasonably specific query (>= 4 chars) contained in an alias
+         (e.g. "amex" -> "Amex Platinum Travel");
+      4. all query tokens are tokens of a single card's canonical name.
+    """
     if not card_name:
         return None
     key = card_name.strip().lower()
+
+    # 1. exact match.
     if key in CARD_ALIASES:
         return CARD_ALIASES[key]
-    # Substring / token match as a fallback (e.g. "amex" -> "Amex Platinum Travel").
+
+    # 2. a full alias appears inside the query.
     for alias, canonical in CARD_ALIASES.items():
-        if key in alias or alias in key:
+        if alias in key:
             return canonical
+
+    # 3. a specific-enough query is contained in an alias.
+    if len(key) >= 4:
+        for alias, canonical in CARD_ALIASES.items():
+            if key in alias:
+                return canonical
+
+    # 4. whole-token overlap (every query token is a token of the card name).
+    key_toks = set(key.split())
     for canonical in CARDS:
-        toks = canonical.lower().split()
-        if any(t in key for t in toks):
+        if key_toks and key_toks <= set(canonical.lower().split()):
             return canonical
+
     return None
 
 

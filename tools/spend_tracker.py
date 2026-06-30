@@ -46,6 +46,22 @@ def _month_bucket(log: dict, month: str) -> dict:
     return bucket
 
 
+def _parse_amount(value) -> float:
+    """Coerce an amount to float, tolerating common formats the model may send.
+
+    Accepts numbers, or strings like "1,50,000", "₹1000", "Rs. 1,500", "INR 200".
+    Raises ValueError on anything that isn't a number after cleanup.
+    """
+    if isinstance(value, bool):  # bool is an int subclass — reject it explicitly
+        raise ValueError("amount must be a number, not a boolean")
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip().lower()
+    for token in ("₹", "rs.", "rs", "inr", ",", " "):
+        s = s.replace(token, "")
+    return float(s)  # may raise ValueError — caller handles it
+
+
 def record_spend(
     tool_context: ToolContext, category: str, amount: float, card: str = ""
 ) -> str:
@@ -59,19 +75,25 @@ def record_spend(
     Returns:
         A confirmation string with updated month totals.
     """
+    try:
+        amt = _parse_amount(amount)
+    except (ValueError, TypeError):
+        return (
+            f"Could not read the amount {amount!r}. Please give it as a number, "
+            "e.g. 1500."
+        )
+
     month = _current_month()
     log = _get_log(tool_context)
     bucket = _month_bucket(log, month)
 
     cat = (category or "uncategorised").strip().lower()
-    bucket["by_category"][cat] = round(
-        bucket["by_category"].get(cat, 0.0) + float(amount), 2
-    )
+    bucket["by_category"][cat] = round(bucket["by_category"].get(cat, 0.0) + amt, 2)
 
     canonical = _resolve_card_name(card) if card else None
     if canonical:
         bucket["by_card"][canonical] = round(
-            bucket["by_card"].get(canonical, 0.0) + float(amount), 2
+            bucket["by_card"].get(canonical, 0.0) + amt, 2
         )
 
     # Reassign so ADK detects the state mutation and persists it.
@@ -79,7 +101,7 @@ def record_spend(
 
     card_txt = f" on {canonical}" if canonical else ""
     return (
-        f"Recorded Rs.{float(amount):,.0f} in '{cat}'{card_txt} for {month}. "
+        f"Recorded Rs.{amt:,.0f} in '{cat}'{card_txt} for {month}. "
         f"Month total for '{cat}': Rs.{bucket['by_category'][cat]:,.0f}."
     )
 
@@ -143,15 +165,23 @@ def check_cap_status(tool_context: ToolContext, card_name: str) -> dict:
         cats = [c.lower() for c in tracker.get("categories", [])]
         rate = tracker.get("rate", 0.10)
         cap_value = tracker.get("cap_value", 0)
+        # Symmetric substring match so a category recorded by merchant name
+        # ("swiggy") counts against a tracker category ("food delivery") and
+        # vice-versa.
         eligible_spend = round(
-            sum(amt for cat, amt in by_cat.items() if any(c in cat for c in cats)), 2
+            sum(
+                amt
+                for cat, amt in by_cat.items()
+                if any(c in cat or cat in c for c in cats)
+            ),
+            2,
         )
         cashback_earned = round(min(eligible_spend * rate, cap_value), 2)
         remaining = round(max(cap_value - cashback_earned, 0.0), 2)
         spend_to_cap = round(cap_value / rate, 2) if rate else 0.0
         return {
             "card": canonical,
-            "cap": f"Rs.{cap_value:,.0f}/month {label} @ {int(rate*100)}%",
+            "cap": f"Rs.{cap_value:,.0f}/month {label} @ {rate * 100:g}%",
             "eligible_spend_this_month": eligible_spend,
             "cashback_earned": cashback_earned,
             "cashback_remaining": remaining,
