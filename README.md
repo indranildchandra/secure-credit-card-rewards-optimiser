@@ -211,7 +211,8 @@ for you:
 
 ```bash
 source .adk_env/bin/activate
-python setup_cards.py        # requires Ollama running with your model
+python setup_cards.py                          # interactive (requires Ollama)
+python setup_cards.py --once "I have an SBI Cashback card"   # one-shot / scriptable
 ```
 
 It reverse-prompts you for the cards you hold, does detailed web research on each
@@ -221,6 +222,10 @@ confirmation, and — once you approve — writes it into `config/cards.config` 
 adds the matching routing rules. Its system prompt lives in
 [`config/setup_cards_instruction.prompt`](config/setup_cards_instruction.prompt).
 Restart `./run.sh` afterwards to load the changes.
+
+The `--once "TEXT"` flag sends a single message and exits (no interactive TTY) —
+handy for scripting or quick checks. If the model can't be reached it fails with
+a clear message and a non-zero exit code.
 
 ## Model (Gemma via Ollama)
 

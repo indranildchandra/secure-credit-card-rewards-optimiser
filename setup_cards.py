@@ -5,7 +5,8 @@ Card onboarding CLI.
 Run this to set up (or extend) your portfolio in config/cards.config by simply
 talking to a local agent:
 
-    python setup_cards.py
+    python setup_cards.py                 # interactive
+    python setup_cards.py --once "TEXT"   # one-shot (scriptable, no TTY needed)
 
 The agent reverse-prompts you for the cards you hold, researches each card's
 current terms on the web in detail, and — with your confirmation — writes them
@@ -17,6 +18,7 @@ Requires Ollama running with the model from config/model.config (start it with
 `ollama serve`, or just run ./run.sh once to pull the model).
 """
 
+import argparse
 import asyncio
 import os
 import sys
@@ -55,6 +57,17 @@ root_agent = Agent(
 )
 
 
+def build_runner() -> InMemoryRunner:
+    """Build a runner with its session created. No model call happens here."""
+    runner = InMemoryRunner(agent=root_agent, app_name=APP_NAME)
+    asyncio.run(
+        runner.session_service.create_session(
+            app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID
+        )
+    )
+    return runner
+
+
 def _agent_reply(runner: InMemoryRunner, text: str) -> str:
     """Send one user message and return the agent's final text response."""
     message = types.Content(role="user", parts=[types.Part(text=text)])
@@ -67,25 +80,61 @@ def _agent_reply(runner: InMemoryRunner, text: str) -> str:
     return "\n".join(c for c in chunks if c).strip()
 
 
-def main() -> None:
-    print("Card Onboarding Assistant (local). Type 'exit' or Ctrl-C to finish.\n")
-    runner = InMemoryRunner(agent=root_agent, app_name=APP_NAME)
-    asyncio.run(
-        runner.session_service.create_session(
-            app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID
-        )
-    )
+class ModelUnavailable(RuntimeError):
+    """Raised when the agent produced no response (typically Ollama not running)."""
 
-    # Kick off the conversation so the agent greets and reverse-prompts.
-    try:
-        print("assistant>", _agent_reply(runner, "Hi — help me set up my cards."))
-    except Exception as e:  # pragma: no cover - depends on a running Ollama
-        print(f"\nCould not reach the model: {e}")
-        print(
-            "Make sure Ollama is running (`ollama serve`) with the model in "
-            "config/model.config (run ./run.sh once to pull it)."
-        )
-        sys.exit(1)
+
+def run_once(text: str) -> str:
+    """Send a single message to a fresh session and return the reply.
+
+    Useful for scripting/testing the onboarding flow without an interactive TTY:
+        python setup_cards.py --once "I have an Amazon Pay ICICI card"
+
+    Raises ModelUnavailable if the agent produced no response.
+    """
+    reply = _agent_reply(build_runner(), text)
+    if not reply:
+        raise ModelUnavailable("no response from the model")
+    return reply
+
+
+def _model_unreachable(detail: str = "") -> None:
+    suffix = f" ({detail})" if detail else ""
+    print(f"\nCould not get a response from the local model{suffix}.")
+    print(
+        "Make sure Ollama is running (`ollama serve`) with the model in "
+        "config/model.config (run ./run.sh once to pull it)."
+    )
+    sys.exit(1)
+
+
+def main(argv=None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Onboard your credit cards into config/cards.config by chatting."
+    )
+    parser.add_argument(
+        "--once",
+        metavar="TEXT",
+        help="Send a single message, print the reply, and exit (no interactive TTY).",
+    )
+    args = parser.parse_args(argv)
+
+    if args.once is not None:
+        try:
+            print(run_once(args.once))
+        except ModelUnavailable as e:  # pragma: no cover - needs a running Ollama
+            _model_unreachable(str(e))
+        return
+
+    print("Card Onboarding Assistant (local). Type 'exit' or Ctrl-C to finish.\n")
+    runner = build_runner()
+
+    # Kick off the conversation so the agent greets and reverse-prompts. If the
+    # very first call yields nothing, the model isn't reachable — bail clearly.
+    greeting = _agent_reply(runner, "Hi — help me set up my cards.")
+    if not greeting:  # pragma: no cover - needs a running Ollama
+        _model_unreachable()
+    print("assistant>", greeting)
 
     while True:
         try:
@@ -98,7 +147,8 @@ def main() -> None:
         if user.lower() in {"exit", "quit", "q"}:
             print("Done. Restart ./run.sh to load your updated cards.")
             break
-        print("\nassistant>", _agent_reply(runner, user))
+        reply = _agent_reply(runner, user)
+        print("\nassistant>", reply or "(no response — is Ollama still running?)")
 
 
 if __name__ == "__main__":

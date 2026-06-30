@@ -28,6 +28,14 @@ if "OLLAMA_API_BASE" in _config:
 if _provider == "ollama":
     from google.adk.models.lite_llm import LiteLlm
 
+    # Quieten LiteLLM's verbose error banner (e.g. when Ollama isn't running).
+    try:
+        import litellm
+
+        litellm.suppress_debug_info = True
+    except Exception:
+        pass
+
     MODEL = LiteLlm(model=f"ollama_chat/{_model_name}")
 else:
     MODEL = _model_name
