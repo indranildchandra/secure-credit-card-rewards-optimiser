@@ -144,42 +144,14 @@ def estimate_reward_value(card_name: str, amount: float, category: str = "") -> 
         return {"error": f"Unknown card: {card_name}"}
 
     cat = (category or "").lower()
-    # Coarse value-back rates (%) keyed by canonical card name. Where a card has
-    # a category-specific top rate we encode (top_rate, top_keywords, base_rate).
-    rate_table = {
-        "Tata Star SBI Platinum": (3.5, ["star bazaar", "star outlet"], 1.0),
-        "Amex Platinum Travel": (
-            2.0,
-            [],
-            2.0,
-        ),  # ~1RP/Rs.50 @ Rs.0.50 + milestone upside
-        "Tata Neu Infinity": (
-            10.0,
-            CARDS["Tata Neu Infinity"].get("tata_brands", []),
-            1.5,
-        ),
-        "HSBC Live+": (10.0, ["dining", "swiggy", "zomato", "grocery", "food"], 1.5),
-        "HDFC Regalia Gold": (
-            5.0,
-            ["smartbuy", "hotel", "flight", "myntra", "nykaa"],
-            1.0,
-        ),
-        "ICICI AmazonPay": (5.0, ["amazon"], 1.0),
-        "Uni GoldX": (1.0, [], 1.0),
-        "Scapia Visa": (4.0, ["scapia", "travel"], 2.0),
-        "Scapia RuPay": (1.0, ["upi"], 1.0),
-        "Axis Rewards": (
-            3.2,
-            ["apparel", "departmental", "fashion"],
-            0.32,
-        ),  # 20RP/Rs.125 @ Rs.0.20
-        "Axis RuPay": (
-            1.0,
-            ["upi"],
-            1.0,
-        ),  # 2RP/Rs.200 @ Rs.0.20 ~ 0.2%; treat coarsely
-    }
-    top, top_kw, base = rate_table.get(canonical, (1.0, [], 1.0))
+    # Value-back rates come from the card's "value_back" block in cards.config:
+    #   {top_rate, top_keywords, base_rate}
+    # — the category top rate applies when the category matches a top keyword,
+    # otherwise the base rate. Fully config-driven; no card names hardcoded here.
+    vb = CARDS[canonical].get("value_back", {})
+    top = vb.get("top_rate", 1.0)
+    top_kw = vb.get("top_keywords", [])
+    base = vb.get("base_rate", top)
     matched_top = any(kw.lower() in cat for kw in top_kw) if top_kw else (top == base)
     rate = top if matched_top else base
     value = round(amount * rate / 100.0, 2)

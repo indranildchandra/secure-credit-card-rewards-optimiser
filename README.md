@@ -1,12 +1,14 @@
 # Secure Credit Card Rewards Optimiser
 
-A privacy-first credit-card rewards strategist for an Indian card portfolio.
+A privacy-first credit-card rewards strategist for **your own** card portfolio.
 Ask **"I am spending Rs.X at [merchant]. Which card?"** and it tells you which
-card minimises net spend — running entirely on a **local model via Ollama**, so
-your transaction reasoning never leaves your machine.
+card minimises net spend — running entirely on a **local Gemma model via
+Ollama**, so your transaction reasoning never leaves your machine.
 
-The interface is the stock **Google ADK Web UI** — there is no custom frontend
-to build or trust.
+Describe your cards once in [`data/cards.config`](data/cards.config) (see
+[Configure it for your own cards](#configure-it-for-your-own-cards)) — no code
+changes. The interface is the stock **Google ADK Web UI**, so there is no custom
+frontend to build or trust.
 
 ## Why "secure"?
 
@@ -93,21 +95,66 @@ Persisted to the SQLite session store (survives across turns/restarts).
 |--------|-----------|--------------|
 | `ddg_search` | `(query: str) -> str` | Free DuckDuckGo search for the latest offers/devaluations. The model authors a focused *merchant + card* query — no API key, no raw transaction text leaves the machine. |
 
-## Configuration
+## Configure it for your own cards
 
-- **Card knowledge** — edit `data/cards.config` (JSON). Add/modify a card under
-  `cards`, or a routing rule under `decision_matrix`. No Python changes needed.
+This is a generic optimiser — **bring your own portfolio by editing
+`data/cards.config`**; no Python changes needed. The shipped config is just an
+example set of cards. Each card has:
+
+```jsonc
+"My Card Name": {
+  "rewards": ["human-readable reward lines, shown in answers"],
+  "fees": "…", "milestones": "…",        // optional, human-readable
+  "value_back": {                         // machine-readable reward rate
+    "top_rate": 5.0,                      // % back in the bonus category
+    "top_keywords": ["amazon"],           // categories that earn top_rate
+    "base_rate": 1.0                      // % back on everything else
+  },
+  "tracker": {                            // OPTIONAL — enables cap/threshold tracking
+    "type": "combined_monthly_cashback",  // one of the 3 types below
+    "categories": ["dining", "grocery"],
+    "rate": 0.10,
+    "cap_value": 1000,
+    "label": "combined monthly cashback"
+  }
+}
+```
+
+**Routing** lives under `decision_matrix` — ordered rules mapping merchant/
+category `keywords` (and optional `min_amount`/`max_amount` bands) to a `primary`
+card, `strategy`, and optional `fallback`.
+
+**Tracker types** (declare a `tracker` block on any card to enable it):
+
+| `type` | Fields | Tracks |
+|--------|--------|--------|
+| `combined_monthly_cashback` | `categories`, `rate`, `cap_value` | A cashback cap shared across categories in a month. |
+| `monthly_spend_threshold` | `threshold`, `counts_cards` (optional) | A monthly spend target (optionally summing several cards). |
+| `annual_spend_milestone` | `target` | Year-to-date spend toward an annual milestone. |
+
+Other knobs:
 - **Agent behaviour** — edit `optimizer/system_instruction.prompt`.
-- **Model** — edit `model.config`:
+- **Model** — edit `model.config` (see below).
 
-  ```
-  MODEL_PROVIDER=ollama
-  MODEL_NAME=gemma4:e2b
-  OLLAMA_API_BASE=http://localhost:11434
-  ```
+## Model (Gemma via Ollama)
 
-  Use any tool-calling Ollama model (`qwen2.5:7b`, `llama3.1:8b`, `mistral:7b`,
-  `gemma4`).
+This project targets Google's **Gemma** family running locally on Ollama. The
+optimiser **requires tool calling**, which the **Gemma 4** generation supports on
+Ollama (earlier Gemma generations do not, so they won't work). Set your tag in
+`model.config`:
+
+```
+MODEL_PROVIDER=ollama
+MODEL_NAME=gemma4:e2b
+OLLAMA_API_BASE=http://localhost:11434
+```
+
+| Model tag | Approx size | Notes |
+|-----------|-------------|-------|
+| `gemma4:e2b` | ~7.2GB | Efficient; good for 16GB RAM machines (default). |
+| `gemma4:e4b` | ~9.6GB | Higher quality; needs 16GB+ RAM. |
+| `gemma4`     | —       | Alias for the current Gemma 4 default tag. |
+| `gemma4:27b` | ~17GB   | Best quality; needs a large-VRAM GPU. |
 
 ## Testing
 
@@ -133,7 +180,6 @@ black .            # format (or `black --check .` to verify only)
 
 ## Notes
 
-- Card data reflects the **April 2026** matrix; the live search surfaces newer
-  changes at query time.
-- "UniCard" in the movie rule maps to **Uni GoldX** (the card carrying the 50%
-  PVR/INOX benefit).
+- The card data is just an example portfolio — replace it with your own in
+  `data/cards.config`. Reward programs change often, so keep it current; the live
+  web search helps surface recent offers/devaluations at query time.

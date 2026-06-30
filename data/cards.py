@@ -5,8 +5,10 @@ The actual card data lives in ``cards.config`` (JSON) right next to this file so
 it can be edited and maintained without touching any Python. This module loads
 that config and exposes three structures used by the deterministic tools:
 
-* ``CARDS``           — the "Full Card Reference": every card's rewards, caps,
-                        milestones, fees and machine-usable thresholds.
+* ``CARDS``           — the "Full Card Reference": each card's rewards, fees and
+                        milestones (human-readable), plus two machine-readable
+                        blocks the tools consume: ``value_back`` (top/base reward
+                        rates) and an optional ``tracker`` (cap/threshold spec).
 * ``DECISION_MATRIX`` — the "Which Card?" routing table: ordered category rules
                         mapping a merchant/category (+ optional amount band) to a
                         primary card and strategy, with fallbacks where relevant.

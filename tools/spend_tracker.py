@@ -100,99 +100,115 @@ def get_spend_summary(tool_context: ToolContext) -> dict:
 
 
 def check_cap_status(tool_context: ToolContext, card_name: str) -> dict:
-    """Report remaining headroom for a card's monthly cap / threshold.
+    """Report remaining headroom for a card's configured cap / threshold.
 
-    Handles the cards that have machine-trackable limits:
-      * HSBC Live+   — combined Rs.1,000/month cashback cap (10% rate => Rs.10,000
-                        eligible spend) across Dining + Food Delivery + Grocery.
-      * Scapia Visa  — Rs.20,000/month spend needed to unlock lounge access.
-      * Amex Platinum Travel — Rs.7 Lakh annual milestone progress.
+    Entirely config-driven: a card opts in by declaring a ``tracker`` block in
+    cards.config. Three tracker types are supported (add the block to any card to
+    enable tracking for it — no code changes):
+
+      * ``combined_monthly_cashback`` — a cashback cap shared across several spend
+        categories at a given rate (e.g. {categories, rate, cap_value}).
+      * ``monthly_spend_threshold``  — a monthly spend target, optionally counting
+        spends across several cards (e.g. {threshold, counts_cards}).
+      * ``annual_spend_milestone``   — a year-to-date spend target ({target}).
 
     Args:
         card_name: Card to check (fuzzy/alias accepted).
 
     Returns:
         dict describing the cap, amount used, and whether it's exhausted/met,
-        or a ``note`` if the card has no machine-trackable cap.
+        or a ``note`` if the card has no ``tracker`` configured.
     """
     canonical = _resolve_card_name(card_name)
     if not canonical:
         return {"error": f"Unknown card: {card_name}"}
 
+    tracker = CARDS[canonical].get("tracker")
+    if not tracker:
+        return {
+            "card": canonical,
+            "note": "No machine-trackable cap/threshold configured for this card. "
+            "Add a 'tracker' block in cards.config to enable it. "
+            "See get_card_details for milestones and fee-waiver thresholds.",
+        }
+
     month = _current_month()
     bucket = _get_log(tool_context).get(month, {"by_category": {}, "by_card": {}})
     by_cat = bucket.get("by_category", {})
     by_card = bucket.get("by_card", {})
-    caps = CARDS[canonical].get("caps", {})
+    ttype = tracker.get("type")
+    label = tracker.get("label", ttype)
 
-    if canonical == "HSBC Live+":
-        eligible_cats = caps.get("combined_cap_categories", [])
-        rate = caps.get("high_rate", 0.10)
-        cap_value = caps.get("combined_monthly_cashback_cap", 1000)
-        eligible_spend = sum(
-            amt for cat, amt in by_cat.items() if any(ec in cat for ec in eligible_cats)
+    if ttype == "combined_monthly_cashback":
+        cats = [c.lower() for c in tracker.get("categories", [])]
+        rate = tracker.get("rate", 0.10)
+        cap_value = tracker.get("cap_value", 0)
+        eligible_spend = round(
+            sum(amt for cat, amt in by_cat.items() if any(c in cat for c in cats)), 2
         )
         cashback_earned = round(min(eligible_spend * rate, cap_value), 2)
         remaining = round(max(cap_value - cashback_earned, 0.0), 2)
-        spend_to_cap = round(cap_value / rate, 2)
+        spend_to_cap = round(cap_value / rate, 2) if rate else 0.0
         return {
             "card": canonical,
-            "cap": f"Rs.{cap_value:,.0f}/month combined cashback (Dining+Food+Grocery @ {int(rate*100)}%)",
+            "cap": f"Rs.{cap_value:,.0f}/month {label} @ {int(rate*100)}%",
             "eligible_spend_this_month": eligible_spend,
             "cashback_earned": cashback_earned,
             "cashback_remaining": remaining,
             "exhausted": remaining <= 0,
             "note": (
-                "Cap exhausted — these categories now earn only 1.5%."
+                "Cap exhausted — these categories now earn the base rate."
                 if remaining <= 0
                 else f"~Rs.{spend_to_cap:,.0f} of eligible spend hits the cap; "
                 f"Rs.{round(spend_to_cap - eligible_spend, 2):,.0f} of headroom left."
             ),
         }
 
-    if canonical == "Scapia Visa":
-        threshold = caps.get("monthly_lounge_threshold", 20000)
-        # Scapia Visa + Scapia RuPay spends both count toward the threshold.
-        counted = by_card.get("Scapia Visa", 0.0) + by_card.get("Scapia RuPay", 0.0)
+    if ttype == "monthly_spend_threshold":
+        threshold = tracker.get("threshold", 0)
+        cards = tracker.get("counts_cards", [canonical])
+        counted = round(sum(by_card.get(c, 0.0) for c in cards), 2)
         remaining = round(max(threshold - counted, 0.0), 2)
         return {
             "card": canonical,
-            "threshold": f"Rs.{threshold:,.0f}/month for lounge access (Visa + RuPay spends count)",
-            "spend_this_month": round(counted, 2),
+            "threshold": f"Rs.{threshold:,.0f}/month — {label}",
+            "spend_this_month": counted,
             "remaining_to_unlock": remaining,
             "met": remaining <= 0,
             "note": (
-                "Lounge threshold met for the month."
+                f"{label} met for the month."
                 if remaining <= 0
-                else f"Spend Rs.{remaining:,.0f} more this month to keep lounge access."
+                else f"Spend Rs.{remaining:,.0f} more this month to reach it."
             ),
         }
 
-    if canonical == "Amex Platinum Travel":
-        target = caps.get("annual_milestone_target", 700000)
+    if ttype == "annual_spend_milestone":
+        target = tracker.get("target", 0)
         year = datetime.now(timezone.utc).strftime("%Y")
         log = _get_log(tool_context)
-        ytd = sum(
-            b.get("by_card", {}).get(canonical, 0.0)
-            for m, b in log.items()
-            if m.startswith(year)
+        ytd = round(
+            sum(
+                b.get("by_card", {}).get(canonical, 0.0)
+                for m, b in log.items()
+                if m.startswith(year)
+            ),
+            2,
         )
         remaining = round(max(target - ytd, 0.0), 2)
         return {
             "card": canonical,
-            "annual_target": f"Rs.{target:,.0f} for 22,500 bonus RP + Rs.10,000 Taj Voucher",
-            "spend_ytd": round(ytd, 2),
+            "annual_target": f"Rs.{target:,.0f} — {label}",
+            "spend_ytd": ytd,
             "remaining_to_target": remaining,
             "met": remaining <= 0,
             "note": (
-                "Annual target reached — stop routing misc spends here."
+                "Annual target reached — stop routing extra spends here."
                 if remaining <= 0
-                else f"Rs.{remaining:,.0f} more to hit the Rs.7 Lakh sweet spot."
+                else f"Rs.{remaining:,.0f} more to hit the target."
             ),
         }
 
     return {
         "card": canonical,
-        "note": "No machine-trackable monthly cap/threshold for this card. "
-        "See get_card_details for milestones and fee-waiver thresholds.",
+        "note": f"Unknown tracker type '{ttype}' in cards.config for this card.",
     }

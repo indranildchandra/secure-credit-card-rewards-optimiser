@@ -4,6 +4,9 @@ A lightweight fake stands in for ADK's ToolContext — the tracker only needs a
 ``.state`` dict that persists between calls.
 """
 
+import pytest
+
+from data.cards import CARDS, CARD_ALIASES
 from tools.spend_tracker import (
     record_spend,
     get_spend_summary,
@@ -16,6 +19,34 @@ class FakeToolContext:
 
     def __init__(self):
         self.state = {}
+
+
+@pytest.fixture
+def custom_card():
+    """Register a brand-new card defined purely via config-style data (no code
+    change) so we can prove the tracker is fully config-driven."""
+    name = "My Custom Cashback Card"
+    CARDS[name] = {
+        "rewards": ["8% on dining + entertainment up to Rs.500/month"],
+        "value_back": {
+            "top_rate": 8.0,
+            "top_keywords": ["dining", "entertainment"],
+            "base_rate": 1.0,
+        },
+        "tracker": {
+            "type": "combined_monthly_cashback",
+            "categories": ["dining", "entertainment"],
+            "rate": 0.08,
+            "cap_value": 500,
+            "label": "combined monthly cashback (Dining + Entertainment)",
+        },
+    }
+    CARD_ALIASES[name.lower()] = name
+    try:
+        yield name
+    finally:
+        CARDS.pop(name, None)
+        CARD_ALIASES.pop(name.lower(), None)
 
 
 def test_record_and_summary():
@@ -83,3 +114,14 @@ def test_card_without_cap():
 def test_unknown_card():
     ctx = FakeToolContext()
     assert "error" in check_cap_status(ctx, "totally fake card")
+
+
+def test_config_driven_custom_card(custom_card):
+    """A card defined only through config data (no Python edit) is tracked."""
+    ctx = FakeToolContext()
+    record_spend(ctx, "dining", 4000, custom_card)
+    record_spend(ctx, "entertainment", 3000, custom_card)
+    status = check_cap_status(ctx, custom_card)
+    # Rs.7,000 eligible @ 8% = Rs.560 > Rs.500 cap => exhausted.
+    assert status["exhausted"] is True
+    assert status["cashback_earned"] == 500.0
