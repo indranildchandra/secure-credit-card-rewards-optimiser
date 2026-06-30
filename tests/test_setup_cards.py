@@ -4,6 +4,8 @@ These exercise the wiring and the --once / run_once plumbing WITHOUT calling the
 model: the actual agent reply (which needs a running Ollama) is monkeypatched.
 """
 
+from types import SimpleNamespace
+
 import pytest
 
 import setup_cards
@@ -13,6 +15,51 @@ def test_agent_wiring():
     assert setup_cards.root_agent.name == "card_setup"
     # ddg_search + the three config-writer tools.
     assert len(setup_cards.root_agent.tools) == 4
+    # The confirm-before-write gate must be wired.
+    assert setup_cards.root_agent.before_tool_callback is not None
+
+
+def _ctx(user_text):
+    return SimpleNamespace(
+        user_content=SimpleNamespace(parts=[SimpleNamespace(text=user_text)])
+    )
+
+
+def test_is_affirmative_word_boundary():
+    assert setup_cards._is_affirmative("yes, save it")
+    assert setup_cards._is_affirmative("go ahead")
+    assert setup_cards._is_affirmative("looks good to me")
+    # 'yesterday' must NOT count as 'yes'.
+    assert not setup_cards._is_affirmative("yesterday I spent 5000 at Croma")
+    assert not setup_cards._is_affirmative("tell me about my HSBC card")
+
+
+def test_write_gate_blocks_without_confirmation():
+    tool = SimpleNamespace(name="save_card")
+    result = setup_cards.require_confirmation_before_write(
+        tool, {"card_json": "{}"}, _ctx("research my HDFC card")
+    )
+    assert result is not None and result.get("blocked") is True
+
+
+def test_write_gate_allows_with_confirmation():
+    tool = SimpleNamespace(name="save_card")
+    assert (
+        setup_cards.require_confirmation_before_write(
+            tool, {"card_json": "{}"}, _ctx("yes, save it please")
+        )
+        is None
+    )
+
+
+def test_write_gate_ignores_non_write_tools():
+    tool = SimpleNamespace(name="ddg_search")
+    assert (
+        setup_cards.require_confirmation_before_write(
+            tool, {"query": "x"}, _ctx("anything")
+        )
+        is None
+    )
 
 
 def test_build_runner_creates_session():

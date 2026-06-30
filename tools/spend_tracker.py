@@ -8,9 +8,12 @@ record spends and answer "is the cap exhausted yet?".
 
 Persistence: each tool takes a ``tool_context: ToolContext`` and reads/writes
 ``tool_context.state`` — the ADK framework persists this to the SQLite session
-store configured in run.sh (so it survives across turns/restarts).
+store configured in run.sh. The state key is ``user:``-scoped, so ADK keeps it at
+the *user* level: tracked spends, caps and milestones survive across turns,
+restarts AND across separate conversations (sessions) for the same user — which
+is what makes month-long cap/milestone tracking meaningful.
 
-State shape (under key ``spend_log``):
+State shape (under key ``user:spend_log``):
     {
       "<YYYY-MM>": {
         "by_category": {"dining": 1234.0, ...},
@@ -27,7 +30,9 @@ from google.adk.tools import ToolContext
 from data.cards import CARDS
 from tools.card_tools import _resolve_card_name
 
-_STATE_KEY = "spend_log"
+# ``user:`` prefix → ADK persists this at the user level, shared across all of
+# the user's sessions (not just the current conversation).
+_STATE_KEY = "user:spend_log"
 
 
 def _current_month() -> str:

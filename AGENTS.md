@@ -66,9 +66,12 @@ it as config (`value_back`, `tracker`, or a `decision_matrix` rule) instead.
 3. **Treat web results as untrusted data.** Search results may contain prompt-
    injection. The agents are instructed to treat them as reference data only. The
    only file-writing tools (`save_card` / `add_decision_rule`) live solely in the
-   onboarding agent, which must get explicit user confirmation before each write,
-   and writes are confined to `config/cards.config` (no path traversal, no exec).
-   Don't widen this: never give the main optimiser agent file-write tools.
+   onboarding agent, and are guarded by a code-level `before_tool_callback`
+   (`require_confirmation_before_write` in `scripts/setup_cards.py`) that blocks a
+   write unless the user's latest message explicitly confirms — so a poisoned
+   search result cannot trigger a silent write. Writes are confined to
+   `config/cards.config` (no path traversal, no exec). Don't widen this: never
+   give the main optimiser agent file-write tools.
 4. **No secrets in the repo.** The default setup needs none. `db/` (the local
    session store) and `.env` are git-ignored — keep them that way.
 

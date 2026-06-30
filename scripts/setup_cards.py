@@ -25,6 +25,7 @@ Requires Ollama running with the model from config/model.config (start it with
 import argparse
 import asyncio
 import os
+import re
 import sys
 
 # This script lives in scripts/; put the repo root on sys.path so `config`,
@@ -56,12 +57,80 @@ APP_NAME = "card_setup"
 USER_ID = "local"
 SESSION_ID = "setup"
 
+# --- Write gate (code-level enforcement of the confirm-before-write rule) ---
+# The config-writing tools are only allowed to run when the USER's most recent
+# message contains an explicit affirmation. This defends against prompt-injection
+# from web-search results: even if a poisoned page tells the model to save, the
+# write is blocked unless the actual user just confirmed it.
+_WRITE_TOOLS = {"save_card", "add_decision_rule"}
+_AFFIRM_WORDS = {
+    "yes",
+    "yeah",
+    "yep",
+    "confirm",
+    "confirmed",
+    "approve",
+    "approved",
+    "ok",
+    "okay",
+    "correct",
+    "proceed",
+    "perfect",
+    "sure",
+    "save",
+    "add",
+    "update",
+}
+_AFFIRM_PHRASES = (
+    "go ahead",
+    "do it",
+    "looks good",
+    "sounds good",
+    "that's right",
+    "thats right",
+    "go for it",
+)
+
+
+def _is_affirmative(text: str) -> bool:
+    """True if the text contains an explicit confirmation (word-boundary safe, so
+    'yesterday' does not count as 'yes')."""
+    t = (text or "").lower()
+    if any(p in t for p in _AFFIRM_PHRASES):
+        return True
+    return bool(set(re.findall(r"[a-z']+", t)) & _AFFIRM_WORDS)
+
+
+def _latest_user_text(tool_context) -> str:
+    content = getattr(tool_context, "user_content", None)
+    parts = getattr(content, "parts", None) or []
+    return " ".join(p.text or "" for p in parts if getattr(p, "text", None))
+
+
+def require_confirmation_before_write(tool, args, tool_context):
+    """ADK before_tool_callback: block save_card/add_decision_rule unless the
+    user's latest message explicitly confirms. Returning a dict skips the tool."""
+    if getattr(tool, "name", "") not in _WRITE_TOOLS:
+        return None
+    if _is_affirmative(_latest_user_text(tool_context)):
+        return None
+    return {
+        "blocked": True,
+        "reason": (
+            "Write blocked: the user has not explicitly confirmed this in their "
+            "latest message. Show the proposed JSON and ask them to confirm "
+            "(e.g. 'yes, save it') before calling this tool again."
+        ),
+    }
+
+
 root_agent = Agent(
     name="card_setup",
     model=MODEL,
     description="Researches the user's credit cards and writes them into config/cards.config.",
     instruction=INSTRUCTION,
     tools=[ddg_search, list_configured_cards, save_card, add_decision_rule],
+    before_tool_callback=require_confirmation_before_write,
 )
 
 
