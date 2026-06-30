@@ -354,6 +354,22 @@ OLLAMA_API_BASE=http://localhost:11434
 | `gemma4`     | —       | Alias for the current Gemma 4 default tag. |
 | `gemma4:27b` | ~17 GB  | Best quality; needs a large-VRAM GPU. |
 
+### Optional cloud path: Gemini
+
+To run the same agent on **Gemini** instead (see
+[Built on Google's AI stack](#built-on-googles-ai-stack)), switch the provider in
+`config/model.config` and add credentials — no code changes:
+
+```ini
+MODEL_PROVIDER=gemini
+MODEL_NAME=gemini-2.5-flash
+```
+
+Then `cp .env.example .env` and set `GOOGLE_API_KEY` (or Vertex AI vars). In this
+mode the live offer check uses **Google Search grounding** instead of DuckDuckGo.
+Note this is **not offline** — transaction data leaves your machine — so it trades
+away the privacy guarantee.
+
 ## Tools reference
 
 All tools are plain Python functions exposed to the agent via ADK.
@@ -405,6 +421,7 @@ tools/
   duckduckgo_search.py       live offers/devaluation web search
   config_writer.py           validates + writes cards.config (used by onboarding)
 config.py                    reads config/model.config -> MODEL (Ollama/Gemini)
+.env.example                 template for credentials (only needed for the Gemini path)
 run.sh                       boots Ollama + `adk web .` on :8080, persistent sessions
 setup_venv.sh                full first-time setup: runs scripts/setup-env.sh + pulls the model
 scripts/
