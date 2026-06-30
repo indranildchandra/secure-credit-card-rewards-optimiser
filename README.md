@@ -25,6 +25,12 @@ apps either bury that under dashboards, hide it behind a paywall, or want full
 mailbox access. This tool does exactly one thing — **given a transaction, name the
 best card** — and does it offline, so your spending data never leaves your laptop.
 
+<div align="center">
+  <img src="demo/demo.jpeg" alt="Sample optimiser output: which card to use for a MacBook Pro purchase — winner, runner-up, a comparison table, and a recommendation" width="600">
+  <br>
+  <em>Sample run: the optimiser working through a "which card for a MacBook Pro?" decision.</em>
+</div>
+
 ## Table of contents
 
 - [Highlights](#highlights)
