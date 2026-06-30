@@ -9,6 +9,7 @@ from .card_tools import (
 from .spend_tracker import (
     record_spend,
     get_spend_summary,
+    get_spend_history,
     check_cap_status,
     check_fee_waiver_status,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "compare_cards_for_spend",
     "record_spend",
     "get_spend_summary",
+    "get_spend_history",
     "check_cap_status",
     "check_fee_waiver_status",
     "list_configured_cards",

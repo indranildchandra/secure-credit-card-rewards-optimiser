@@ -7,11 +7,15 @@ A lightweight fake stands in for ADK's ToolContext — the tracker only needs a
 import pytest
 
 from data.cards import CARDS, CARD_ALIASES
+import tools.spend_tracker as st
 from tools.spend_tracker import (
     record_spend,
     get_spend_summary,
+    get_spend_history,
     check_cap_status,
     check_fee_waiver_status,
+    _STATE_KEY,
+    _RETENTION_MONTHS,
 )
 
 
@@ -149,6 +153,50 @@ def test_card_without_cap():
 def test_unknown_card():
     ctx = FakeToolContext()
     assert "error" in check_cap_status(ctx, "totally fake card")
+
+
+def test_state_key_is_user_scoped():
+    # Memory: user-scoped so spends persist across sessions, not just one chat.
+    assert _STATE_KEY.startswith("user:")
+
+
+def test_spend_history_recall_across_months():
+    ctx = FakeToolContext()
+    ctx.state[_STATE_KEY] = {
+        "2026-05": {
+            "by_category": {"dining": 3000.0},
+            "by_card": {"HSBC Live+": 3000.0},
+        },
+        "2026-06": {
+            "by_category": {"dining": 1000.0, "grocery": 2000.0},
+            "by_card": {"HSBC Live+": 3000.0},
+        },
+    }
+    res = get_spend_history(ctx, months_back=2)
+    assert res["months"] == ["2026-06", "2026-05"]  # most recent first
+    assert res["totals"]["by_category"]["dining"] == 4000.0
+    assert res["totals"]["by_card"]["HSBC Live+"] == 6000.0
+    assert set(res["per_month"]) == {"2026-05", "2026-06"}
+
+
+def test_spend_history_months_back_clamped():
+    ctx = FakeToolContext()
+    ctx.state[_STATE_KEY] = {"2026-06": {"by_category": {"x": 1.0}, "by_card": {}}}
+    assert get_spend_history(ctx, months_back=0)["months"] == ["2026-06"]
+
+
+def test_retention_prunes_old_months():
+    ctx = FakeToolContext()
+    # Seed 24 old months (well over the retention window).
+    ctx.state[_STATE_KEY] = {
+        f"20{yy:02d}-{mm:02d}": {"by_category": {"x": 1.0}, "by_card": {}}
+        for yy in (0, 1)
+        for mm in range(1, 13)
+    }
+    record_spend(ctx, "dining", 100, "HSBC Live+")  # triggers prune
+    stored = ctx.state[_STATE_KEY]
+    assert len(stored) <= _RETENTION_MONTHS
+    assert st._current_month() in stored  # current month always kept
 
 
 def test_fee_waiver_lifetime_free():

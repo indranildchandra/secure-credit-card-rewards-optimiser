@@ -34,6 +34,12 @@ from tools.card_tools import _resolve_card_name
 # the user's sessions (not just the current conversation).
 _STATE_KEY = "user:spend_log"
 
+# Retention / eviction for the durable store. We keep at most this many of the
+# most-recent months so the state can't grow without bound. 13 = the current
+# month plus the previous 12, which always covers the current calendar year
+# (annual milestones / fee-waivers) and month-over-month comparisons.
+_RETENTION_MONTHS = 13
+
 
 def _current_month() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m")
@@ -49,6 +55,15 @@ def _month_bucket(log: dict, month: str) -> dict:
         bucket = {"by_category": {}, "by_card": {}}
         log[month] = bucket
     return bucket
+
+
+def _prune_old_months(log: dict) -> None:
+    """Evict all but the most-recent ``_RETENTION_MONTHS`` months, in place."""
+    if len(log) <= _RETENTION_MONTHS:
+        return
+    keep = set(sorted(log.keys(), reverse=True)[:_RETENTION_MONTHS])
+    for month in [m for m in log if m not in keep]:
+        del log[month]
 
 
 def _parse_amount(value) -> float:
@@ -101,7 +116,8 @@ def record_spend(
             bucket["by_card"].get(canonical, 0.0) + amt, 2
         )
 
-    # Reassign so ADK detects the state mutation and persists it.
+    # Bound the durable store, then reassign so ADK detects the mutation.
+    _prune_old_months(log)
     tool_context.state[_STATE_KEY] = log
 
     card_txt = f" on {canonical}" if canonical else ""
@@ -123,6 +139,45 @@ def get_spend_summary(tool_context: ToolContext) -> dict:
         "month": month,
         "by_category": bucket.get("by_category", {}),
         "by_card": bucket.get("by_card", {}),
+    }
+
+
+def get_spend_history(tool_context: ToolContext, months_back: int = 3) -> dict:
+    """Recall spend totals for recent months from the persistent (user-scoped) log.
+
+    Answers conversational recall like "what did I spend on dining last month?".
+    Reads from durable storage on demand, so this history never has to live in the
+    conversation context.
+
+    Args:
+        months_back: How many recent months to include (default 3; min 1).
+
+    Returns:
+        dict with ``months`` (most-recent-first list of YYYY-MM present in the
+        window), ``per_month`` ({month: {by_category, by_card}}), and ``totals``
+        (by_category / by_card aggregated across the window).
+    """
+    n = max(1, int(months_back) if months_back else 1)
+    log = _get_log(tool_context)
+    months = sorted(log.keys(), reverse=True)[:n]
+
+    per_month = {}
+    cat_totals: dict = {}
+    card_totals: dict = {}
+    for m in months:
+        bucket = log.get(m, {})
+        by_cat = bucket.get("by_category", {})
+        by_card = bucket.get("by_card", {})
+        per_month[m] = {"by_category": by_cat, "by_card": by_card}
+        for cat, amt in by_cat.items():
+            cat_totals[cat] = round(cat_totals.get(cat, 0.0) + amt, 2)
+        for card, amt in by_card.items():
+            card_totals[card] = round(card_totals.get(card, 0.0) + amt, 2)
+
+    return {
+        "months": months,
+        "per_month": per_month,
+        "totals": {"by_category": cat_totals, "by_card": card_totals},
     }
 
 

@@ -27,6 +27,7 @@ from tools.card_tools import (
 from tools.spend_tracker import (
     record_spend,
     get_spend_summary,
+    get_spend_history,
     check_cap_status,
     check_fee_waiver_status,
 )
@@ -83,6 +84,7 @@ root_agent = Agent(
         check_fee_waiver_status,
         record_spend,
         get_spend_summary,
+        get_spend_history,
         web_search_tool,
     ],
 )

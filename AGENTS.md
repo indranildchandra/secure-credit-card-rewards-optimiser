@@ -75,6 +75,23 @@ it as config (`value_back`, `tracker`, or a `decision_matrix` rule) instead.
 4. **No secrets in the repo.** The default setup needs none. `db/` (the local
    session store) and `.env` are git-ignored — keep them that way.
 
+## Memory & context
+
+Two distinct stores — keep them separate:
+
+- **Durable facts → ADK session state**, `user:`-scoped (`user:spend_log`). This is
+  a server-side KV store in SQLite; it does **not** enter the LLM context window
+  unless a tool returns it. Tracked spends/caps/milestones live here and are read
+  on demand via the tracker tools (incl. `get_spend_history`), so they persist
+  across turns and sessions without bloating the prompt. The store is bounded: it
+  keeps only the most-recent `_RETENTION_MONTHS` (13) months — that's the eviction
+  policy for the durable layer.
+- **Conversation history → the context window.** This is what actually grows per
+  turn. The design keeps facts out of it (tools-on-demand). If a deployment needs
+  very long single sessions, add a rolling-summarisation `before_model_callback`
+  or push completed sessions into an ADK `MemoryService` — don't move durable data
+  into the prompt.
+
 ## Coding conventions
 
 - Python 3.9+. Format with **black** (line length 88) and lint with **ruff**;

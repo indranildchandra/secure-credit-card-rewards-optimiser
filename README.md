@@ -390,6 +390,7 @@ All tools are plain Python functions exposed to the agent via ADK.
 |--------|-----------|--------------|
 | `record_spend` | `(tool_context, category: str, amount: float, card: str = "") -> str` | Records a spend for the current month (by category and card). |
 | `get_spend_summary` | `(tool_context) -> dict` | This month's totals by category and card. |
+| `get_spend_history` | `(tool_context, months_back: int = 3) -> dict` | Recalls recent months' totals from the persistent user-scoped log ("what did I spend on dining last month?"). |
 | `check_cap_status` | `(tool_context, card_name: str) -> dict` | Remaining headroom for the card's configured `tracker` (cap / threshold / milestone). |
 | `check_fee_waiver_status` | `(tool_context, card_name: str) -> dict` | Year-to-date spend vs the card's annual fee-waiver threshold (or lifetime-free). |
 
