@@ -87,10 +87,14 @@ Two distinct stores — keep them separate:
   keeps only the most-recent `_RETENTION_MONTHS` (13) months — that's the eviction
   policy for the durable layer.
 - **Conversation history → the context window.** This is what actually grows per
-  turn. The design keeps facts out of it (tools-on-demand). If a deployment needs
-  very long single sessions, add a rolling-summarisation `before_model_callback`
-  or push completed sessions into an ADK `MemoryService` — don't move durable data
-  into the prompt.
+  turn. The design keeps facts out of it (tools-on-demand). For very long single
+  sessions there is an opt-in sliding-window compaction
+  (`optimizer/context_window.py`, wired as the optimiser's `before_model_callback`):
+  set `OPTIMIZER_MAX_HISTORY_CONTENTS=<N>` to keep only the most-recent N history
+  items, replacing older ones with a note that points the model back at the
+  tracker tools. For heavier needs, swap the note for an LLM summary or push
+  completed sessions into an ADK `MemoryService` — don't move durable data into
+  the prompt.
 
 ## Coding conventions
 

@@ -416,6 +416,7 @@ config/
   setup_cards_instruction.prompt  the onboarding agent's system prompt
 optimizer/
   agent.py                   ADK root_agent — orchestrates tools, formats the answer
+  context_window.py          opt-in sliding-window history compaction for long sessions
 data/
   cards.py                   loads config/cards.config and derives lookup helpers
 tools/

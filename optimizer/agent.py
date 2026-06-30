@@ -17,6 +17,7 @@ from google.adk.agents import Agent
 from dotenv import load_dotenv
 
 from config import MODEL, IS_GEMINI
+from .context_window import trim_history_before_model
 from tools.card_tools import (
     find_cards_for_category,
     get_card_details,
@@ -87,6 +88,7 @@ root_agent = Agent(
         get_spend_history,
         web_search_tool,
     ],
+    before_model_callback=trim_history_before_model,
 )
 
 print(" Credit Card Optimiser agent ready.")
