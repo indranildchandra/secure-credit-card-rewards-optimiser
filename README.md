@@ -112,40 +112,41 @@ Key properties:
 
 ## How it works
 
-The agent orchestrates a set of deterministic tools and formats a four-field
-answer. All card knowledge is read from config; only the offer-check tool touches
-the network.
+A thin **root router** agent handles the hot "which card?" path with deterministic
+card tools, and delegates any spending question to a focused **`spend_manager`
+sub-agent** (see [Agent architecture](AGENTS.md#agent-architecture-one-feature--one-sub-agent))
+so the common path stays lean on tokens. All card knowledge is read from config;
+only the web-search tool touches the network.
 
 ```mermaid
 flowchart TD
-    U["You ask:<br/>'Spending Rs.X at a merchant — which card?'"] --> AG["optimizer agent<br/>local Gemma via Ollama"]
+    U["You ask:<br/>'Spending Rs.X at a merchant — which card?'"] --> AG["optimizer agent (root router)<br/>local Gemma via Ollama"]
 
-    subgraph Tools["Deterministic tools — no LLM, no network"]
+    subgraph Card["Card tools — deterministic, config-driven"]
         R["find_cards_for_category"]
         CMP["compare_cards_for_spend"]
         D["get_card_details"]
-        V["estimate_reward_value"]
-        C["check_cap_status"]
-        FW["check_fee_waiver_status"]
-        SP["record_spend /<br/>get_spend_summary"]
+        V["estimate_reward_value /<br/>estimate_net_cost"]
+    end
+
+    subgraph Spend["spend_manager sub-agent (AgentTool)"]
+        SC["check_cap_status /<br/>check_fee_waiver_status"]
+        SR["record_spend / get_spend_history /<br/>assess_card_value"]
     end
 
     AG --> R
     AG --> CMP
     AG --> D
     AG --> V
-    AG --> C
-    AG --> FW
-    AG --> SP
-    AG --> WS["ddg_search"]
+    AG --> Spend
+    AG --> WS["web search<br/>(Google grounding / DuckDuckGo)"]
 
     R --> CFG["config/cards.config"]
     CMP --> CFG
     D --> CFG
     V --> CFG
-    C --> CFG
-    FW --> CFG
-    SP --> DB["db/ SQLite<br/>session store"]
+    SC --> DB["db/ SQLite<br/>user-scoped state"]
+    SR --> DB
     WS --> NET["web:<br/>latest offers / devaluations"]
 
     AG --> ANS["Answer:<br/>Winner / Reward / Logic / Live Update"]
@@ -443,10 +444,12 @@ All tools are plain Python functions exposed to the agent via ADK.
 config/
   model.config               provider/model selection (Gemma via Ollama)
   cards.config               your card knowledge base (Full Reference + Decision Matrix)
-  system_instruction.prompt  the optimiser agent's system prompt
+  system_instruction.prompt  the root optimiser agent's system prompt
   setup_cards_instruction.prompt  the onboarding agent's system prompt
+  spend_instruction.prompt   the spend_manager sub-agent's system prompt
 optimizer/
-  agent.py                   ADK root_agent — orchestrates tools, formats the answer
+  agent.py                   ADK root_agent (thin router) — card tools + sub-agents
+  spend_agent.py             spend/cap/fee-waiver/ROI/recall sub-agent (AgentTool)
   context_window.py          opt-in sliding-window history compaction for long sessions
 data/
   cards.py                   loads config/cards.config and derives lookup helpers

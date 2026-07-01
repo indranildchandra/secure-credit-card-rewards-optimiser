@@ -51,6 +51,37 @@ to `scripts/setup-env.sh`, so the environment is identical everywhere.
 | `tests/` | Offline pytest suite + `TEST-CASES.md`. |
 | `scripts/setup-env.sh` | Shared environment bootstrap. |
 
+## Agent architecture: one feature → one sub-agent
+
+**Standard (follow this for new features).** Implement a cohesive feature as a
+focused **sub-agent** exposed to the root optimiser as a single ADK `AgentTool`,
+rather than piling every tool onto the root agent. The root stays a thin router;
+each feature's tools live in its own specialist agent.
+
+Why: ADK sends every root tool's schema on **every** turn. A monolithic agent
+with ~13 tool schemas taxes the common "which card?" path. Grouping a feature's
+tools behind one `AgentTool` means the root carries a single schema for it and
+the feature's tools are only loaded when the sub-agent is actually invoked —
+meaningfully better token usage on the hot path.
+
+Reference example: `optimizer/spend_agent.py` (the spend/cap/fee-waiver/ROI/recall
+cluster) — six tools collapsed into the `spend_manager` AgentTool. The root
+delegates any spending question to it.
+
+Rules for a new feature sub-agent:
+
+1. Put it in `optimizer/<feature>_agent.py`; build an `Agent(name=..., model=MODEL,
+   tools=[...])` and export `<feature>_tool = AgentTool(agent=...)`.
+2. Externalise its instruction to `config/<feature>_instruction.prompt` (config
+   over code — same rule as everything else).
+3. Wire the single `AgentTool` into `optimizer/agent.py` and tell the root prompt
+   when to delegate to it.
+4. **State still works:** `AgentTool` seeds the sub-agent with the parent session
+   state and forwards its state deltas back, so `tool_context.state` (incl.
+   `user:`-scoped keys) reads and writes normally — no special handling needed.
+5. Keep only genuinely hot, always-relevant tools (the card lookup/reward tools)
+   directly on the root.
+
 ## The golden rule: prefer config over code
 
 Card behaviour is **data**. To add or change a card, a reward rate, a routing

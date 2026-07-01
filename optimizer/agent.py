@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 
 from config import MODEL
 from .context_window import trim_history_before_model
+from .spend_agent import spend_manager_tool
 from tools.web_search import build_web_search_tool
 from tools.card_tools import (
     find_cards_for_category,
@@ -26,14 +27,6 @@ from tools.card_tools import (
     estimate_reward_value,
     estimate_net_cost,
     compare_cards_for_spend,
-)
-from tools.spend_tracker import (
-    record_spend,
-    get_spend_summary,
-    get_spend_history,
-    check_cap_status,
-    check_fee_waiver_status,
-    assess_card_value,
 )
 
 # Single source of truth: project root .env covers all modules.
@@ -62,12 +55,7 @@ root_agent = Agent(
         list_all_cards,
         estimate_reward_value,
         estimate_net_cost,
-        check_cap_status,
-        check_fee_waiver_status,
-        assess_card_value,
-        record_spend,
-        get_spend_summary,
-        get_spend_history,
+        spend_manager_tool,
         web_search_tool,
     ],
     before_model_callback=trim_history_before_model,
