@@ -58,3 +58,24 @@ def test_import_rows_persists_user_state():
     # User-scoped state is shared across the user's sessions, so a fresh session
     # still sees the imported totals.
     assert log["2026-06"]["by_card"]["HSBC Live+"] == 12000.0
+
+
+def test_import_prunes_to_retention_window():
+    # R1 regression: importing many historical months must not grow the store
+    # without bound — the importer prunes like record_spend.
+    from tools.spend_tracker import _RETENTION_MONTHS
+
+    rows = [
+        {"month": f"20{yy:02d}-{mm:02d}", "category": "x", "amount": 100.0, "card": ""}
+        for yy in (0, 1)
+        for mm in range(1, 13)
+    ]  # 24 months
+    svc = InMemorySessionService()
+
+    async def run():
+        await import_rows(svc, "optimizer", "user", rows)
+        s = await svc.create_session(app_name="optimizer", user_id="user")
+        return s.state.get(_STATE_KEY)
+
+    log = asyncio.run(run())
+    assert len(log) <= _RETENTION_MONTHS

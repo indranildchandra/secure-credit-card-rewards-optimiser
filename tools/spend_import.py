@@ -15,7 +15,12 @@ import io
 from copy import deepcopy
 from datetime import datetime, timezone
 
-from tools.spend_tracker import _parse_amount, apply_spend_to_log, _STATE_KEY
+from tools.spend_tracker import (
+    _parse_amount,
+    apply_spend_to_log,
+    _prune_old_months,
+    _STATE_KEY,
+)
 
 # Flexible header mapping — first matching column (case-insensitive) wins.
 _AMOUNT_COLS = ("amount", "amt", "value", "debit", "spent")
@@ -84,6 +89,7 @@ async def import_rows(session_service, app_name: str, user_id: str, rows: list) 
         apply_spend_to_log(
             log, r.get("month") or current_month, r["category"], r["amount"], r["card"]
         )
+    _prune_old_months(log)  # bound the durable store, same as record_spend
 
     event = Event(
         author="csv-import",

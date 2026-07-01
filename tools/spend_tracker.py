@@ -421,6 +421,15 @@ def assess_card_value(tool_context: ToolContext, card_name: str) -> dict:
     base_rate = card.get("value_back", {}).get("base_rate", 1.0)
     est_rewards = round(ytd * base_rate / 100.0, 2)
 
+    if not fw:
+        return {
+            "card": canonical,
+            "spend_ytd": ytd,
+            "est_rewards_ytd": est_rewards,
+            "verdict": "No annual-fee info configured for this card "
+            "(add a 'fee_waiver' block in cards.config to assess ROI).",
+        }
+
     if fw.get("lifetime_free"):
         return {
             "card": canonical,

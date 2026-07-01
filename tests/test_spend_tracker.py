@@ -193,6 +193,20 @@ def test_assess_card_value_fee_not_waived():
     assert "not yet waived" in r["verdict"].lower()
 
 
+def test_assess_card_value_missing_fee_info():
+    # R4 regression: a card with no fee_waiver block gets an honest "no info"
+    # verdict, not a wrong "fee always applies".
+    ctx = FakeToolContext()
+    bak = CARDS["Uni GoldX"].pop("fee_waiver", None)
+    try:
+        r = assess_card_value(ctx, "Uni GoldX")
+        assert "no annual-fee info" in r["verdict"].lower()
+        assert "always applies" not in r["verdict"].lower()
+    finally:
+        if bak is not None:
+            CARDS["Uni GoldX"]["fee_waiver"] = bak
+
+
 def test_spend_history_recall_across_months():
     ctx = FakeToolContext()
     ctx.state[_STATE_KEY] = {

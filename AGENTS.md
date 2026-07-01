@@ -85,12 +85,14 @@ Rules for a new feature sub-agent:
 ## The golden rule: prefer config over code
 
 Card behaviour is **data**. To add or change a card, a reward rate, a routing
-rule, or a cap, edit `config/cards.config` — do **not** add card-specific
-branches in Python. The schema and tracker types are documented in the README
-("Configure it for your own cards").
+rule, a cap, an eligibility limit or a forex markup, edit `config/cards.config` —
+do **not** add card-specific branches in Python. The schema, tracker types and
+the machine-readable fields (`value_back`, `tracker`, `fee_waiver`, `min_txn`,
+`no_reward_categories`, `forex_markup_pct`) are documented in the README
+("Configure it for your own cards"). Config is validated at load (`validate_config`).
 
 If you find yourself writing `if card_name == "...":` in a tool, stop — express
-it as config (`value_back`, `tracker`, or a `decision_matrix` rule) instead.
+it as config instead.
 
 ## Privacy invariants (do not break)
 

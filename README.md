@@ -98,14 +98,21 @@ Key properties:
 - **Config-driven, bring-your-own-cards** — describe your portfolio once in
   [`config/cards.config`](config/cards.config). Reward rates, category caps, UPI
   bands and routing rules are all data, not code.
-- **Natural-language onboarding** — `./scripts/setup_cards.sh` interviews you,
-  researches each card's current terms on the web, and writes the config for you.
+- **True net-cost** — ranks by _price − reward + forex markup_ (not just % back),
+  and is eligibility-aware: a card that earns nothing for a spend (below a
+  minimum, an excluded category, or a cap that's already exhausted) never wins.
+- **Natural-language onboarding + CSV import** — `./scripts/setup_cards.sh`
+  interviews you and writes the config; `scripts/import_spends.py` loads a
+  statement CSV on-device so cap tracking works without logging each purchase.
 - **Reliable on small models** — routing and arithmetic happen in deterministic
   Python tools, so even a 2B-class local model gives consistent answers.
-- **Cap, milestone & fee-waiver aware** — tracks shared monthly cashback caps,
-  monthly spend thresholds, annual milestones, and annual fee-waiver progress
-  across sessions (local SQLite).
-- **Top-N comparison** — ask for the best few cards for a spend, not just one.
+- **Cap, milestone, fee-waiver & ROI aware** — tracks shared monthly cashback
+  caps, monthly spend thresholds, annual milestones, fee-waiver progress, and
+  "is this card worth its fee?" — persisted per user across sessions (local SQLite).
+- **Top-N comparison & spend recall** — the best few cards for a spend, and
+  "what did I spend on dining last month?".
+- **Lean, router + sub-agents** — a thin root agent delegates the spend/analytics
+  feature to a focused sub-agent, keeping the hot path cheap on tokens.
 - **Live offer check** — a focused web search surfaces the latest offers and
   devaluations, with the query built around _merchant + card names only_.
 - **Zero custom UI** — the interface is the stock **Google ADK Web UI**.
@@ -293,9 +300,18 @@ Each card entry:
     "rate": 0.10,
     "cap_value": 1000,
     "label": "combined monthly cashback"
-  }
+  },
+  "fee_waiver": {"annual_spend": 200000, "fee": "Rs.999"},  // OPTIONAL — ROI/waiver
+  "min_txn": 2000,                        // OPTIONAL — earns nothing below this
+  "no_reward_categories": ["rent", "fuel"], // OPTIONAL — categories that earn 0
+  "forex_markup_pct": 0.0                  // OPTIONAL — international markup (default 3.5)
 }
 ```
+
+Every field except `rewards` is optional; the machine-readable ones (`value_back`,
+`tracker`, `fee_waiver`, `min_txn`, `no_reward_categories`, `forex_markup_pct`)
+drive the deterministic tools. The config is validated at load — a malformed
+entry fails fast with a clear message.
 
 **Routing** lives under `decision_matrix` — ordered rules mapping merchant/
 category `keywords` (with optional `min_amount` / `max_amount` bands) to a
