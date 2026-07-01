@@ -5,8 +5,14 @@ from optimizer.agent import web_search_tool
 
 
 def test_optimizer_tool_count():
-    # 5 card tools + 5 spend/cap/recall tools + 1 web-search tool.
-    assert len(optimizer.root_agent.tools) == 11
+    # 6 card tools (find/compare/details/list/reward/net_cost) + 6 spend/cap/ROI/
+    # recall tools + 1 web-search tool.
+    assert len(optimizer.root_agent.tools) == 13
+
+
+def test_new_tools_wired():
+    names = {getattr(t, "__name__", "") for t in optimizer.root_agent.tools}
+    assert {"estimate_net_cost", "assess_card_value"} <= names
 
 
 def test_web_search_tool_is_ddg_on_ollama():

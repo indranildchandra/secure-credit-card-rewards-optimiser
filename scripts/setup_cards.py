@@ -40,7 +40,7 @@ from google.genai import types  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
 from config import MODEL  # noqa: E402
-from tools.duckduckgo_search import ddg_search  # noqa: E402
+from tools.web_search import build_web_search_tool  # noqa: E402
 from tools.config_writer import (  # noqa: E402
     list_configured_cards,
     save_card,
@@ -158,7 +158,7 @@ root_agent = Agent(
     description="Researches the user's credit cards and writes them into config/cards.config.",
     instruction=INSTRUCTION,
     tools=[
-        ddg_search,
+        build_web_search_tool(),
         list_configured_cards,
         save_card,
         add_decision_rule,

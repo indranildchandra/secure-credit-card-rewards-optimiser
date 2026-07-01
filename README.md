@@ -336,6 +336,34 @@ The `--once "TEXT"` flag sends a single message and exits (no interactive TTY) �
 handy for scripting or quick checks. If the model can't be reached it fails with
 a clear message and a non-zero exit code.
 
+## Import your statement (CSV, on-device)
+
+Manual logging doesn't scale — import a transactions CSV instead. It's parsed and
+written locally into the same spend log the optimiser reads (no mailbox access,
+nothing leaves your machine):
+
+```bash
+python scripts/import_spends.py --csv statement.csv          # imports
+python scripts/import_spends.py --csv statement.csv --dry-run  # preview only
+```
+
+The CSV needs an amount column and ideally a merchant/category column; card and
+date columns are used if present. Column names are matched flexibly. (State is
+keyed by `--user`/`--app` to match the ADK Web UI — see the script's `--help`.)
+
+## Agent-level evals
+
+Unit tests cover the deterministic tools; the end-to-end **evals** check the
+agent's actual card choices (prompt + routing + tools):
+
+```bash
+python evals/run_evals.py     # needs Ollama running; exit code = failures
+```
+
+Cases live in [`evals/cases.py`](evals/cases.py). A subset also runs under pytest
+(`tests/test_evals.py`) and is **auto-skipped when Ollama isn't reachable**, so
+the offline suite and CI stay green.
+
 ## Model (Gemma via Ollama)
 
 This project targets Google's **Gemma** family running locally on Ollama. The
@@ -383,7 +411,8 @@ All tools are plain Python functions exposed to the agent via ADK.
 | `compare_cards_for_spend` | `(merchant_or_category: str, amount: float, top_n: int = 3) -> dict` | Ranks the whole portfolio by value for a spend; returns the top N (with the decision-matrix primary flagged). |
 | `get_card_details` | `(card_name: str) -> dict` | Full reference for one card (fuzzy/alias name match). |
 | `list_all_cards` | `() -> list` | Every card with a one-line "when to use". |
-| `estimate_reward_value` | `(card_name: str, amount: float, category: str = "") -> dict` | Approximate ₹/% value-back, read from each card's `value_back` config. |
+| `estimate_reward_value` | `(card_name: str, amount: float, category: str = "") -> dict` | Approximate ₹/% value-back (eligibility-aware: 0 below min-txn / on excluded categories). |
+| `estimate_net_cost` | `(card_name, amount, category="", is_international=False) -> dict` | True net cost = price − reward + forex markup for one transaction. |
 
 ### [`tools/spend_tracker.py`](tools/spend_tracker.py) — session-state caps & thresholds
 | Method | Signature | What it does |
@@ -393,6 +422,7 @@ All tools are plain Python functions exposed to the agent via ADK.
 | `get_spend_history` | `(tool_context, months_back: int = 3) -> dict` | Recalls recent months' totals from the persistent user-scoped log ("what did I spend on dining last month?"). |
 | `check_cap_status` | `(tool_context, card_name: str) -> dict` | Remaining headroom for the card's configured `tracker` (cap / threshold / milestone). |
 | `check_fee_waiver_status` | `(tool_context, card_name: str) -> dict` | Year-to-date spend vs the card's annual fee-waiver threshold (or lifetime-free). |
+| `assess_card_value` | `(tool_context, card_name: str) -> dict` | ROI read — is this card worth its annual fee, given your YTD spend on it? |
 
 ### [`tools/duckduckgo_search.py`](tools/duckduckgo_search.py) — live web search
 | Method | Signature | What it does |
@@ -421,18 +451,21 @@ optimizer/
 data/
   cards.py                   loads config/cards.config and derives lookup helpers
 tools/
-  card_tools.py              deterministic routing / lookup / reward / compare tools
-  spend_tracker.py           session-state cap, threshold & fee-waiver tracker
+  card_tools.py              routing / lookup / reward / net-cost / compare tools
+  spend_tracker.py           session-state cap, threshold, fee-waiver & ROI tracker
   duckduckgo_search.py       live offers/devaluation web search
-  config_writer.py           validates + writes cards.config (used by onboarding)
+  web_search.py              provider-aware web-search tool factory (Gemini/Ollama)
+  config_writer.py           validates + writes/removes cards in cards.config
+  spend_import.py            CSV parsing + persist for local statement import
 config.py                    reads config/model.config -> MODEL (Ollama/Gemini)
 .env.example                 template for credentials (only needed for the Gemini path)
 run.sh                       boots Ollama + `adk web .` on :8080, persistent sessions
 setup_venv.sh                full first-time setup: runs scripts/setup-env.sh + pulls the model
 scripts/
   setup-env.sh               shared env bootstrap (venv + deps); used by every tool hook
-  setup_cards.py             natural-language card onboarding agent (CLI)
-  setup_cards.sh             shell wrapper that activates the venv and runs the CLI
+  setup_cards.py / .sh       natural-language card onboarding agent (CLI) + wrapper
+  import_spends.py           local CSV/statement import into the spend log
+evals/                       agent-level (end-to-end) eval cases + runner
 db/                          local SQLite session store (created at runtime, git-ignored)
 tests/                       offline pytest suite + manual TEST-CASES.md
 AGENTS.md                    contributor guide for AI coding tools (single source of truth)
@@ -475,9 +508,10 @@ black .            # format  (black --check . to verify only)
 - [x] Natural-language import / removal of cards in `cards.config`.
 - [x] Config validation (fail-fast) and CI (ruff + black + pytest).
 - [x] Eligibility-aware value model (min-txn / excluded-category / cap-exhaustion).
-- [ ] True net-cost (price − reward − fees + forex) per card.
-- [ ] Local CSV/statement import to populate the spend log (no mailbox access).
-- [ ] Automated agent-level (end-to-end) evals against an offline judge model.
+- [x] True net-cost (price − reward + forex) per card, incl. `is_international`.
+- [x] Local CSV/statement import to populate the spend log (no mailbox access).
+- [x] Portfolio ROI ("is this card worth its fee?") + structured decision logging.
+- [x] Automated agent-level (end-to-end) evals (`evals/`, skipped when no model).
 
 ## Contributing
 

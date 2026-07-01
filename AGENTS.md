@@ -35,6 +35,10 @@ to `scripts/setup-env.sh`, so the environment is identical everywhere.
 | `optimizer/agent.py` | ADK `root_agent`: wires tools, loads the prompt. |
 | `scripts/setup_cards.py` | Natural-language onboarding agent: researches cards, writes `cards.config`. |
 | `scripts/setup_cards.sh` | Shell wrapper for the onboarding CLI (activates the venv). |
+| `scripts/import_spends.py` | Local CSV/statement import into the spend log (on-device). |
+| `tools/web_search.py` | Provider-aware web-search tool factory (Gemini grounding vs Ollama/DDG). |
+| `tools/spend_import.py` | CSV parsing + ADK-persist for statement import. |
+| `evals/` | Agent-level (end-to-end) eval cases + runner (`run_evals.py`). |
 | `setup_venv.sh` | Full first-time setup: runs `scripts/setup-env.sh`, then pulls the Ollama model. |
 | `data/cards.py` | Loads `config/cards.config`; derives `CARDS`, `DECISION_MATRIX`, `CARD_ALIASES`. |
 | `tools/card_tools.py` | Deterministic routing / lookup / reward / top-N compare tools. |

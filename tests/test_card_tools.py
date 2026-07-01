@@ -9,6 +9,7 @@ from tools.card_tools import (
     get_card_details,
     list_all_cards,
     estimate_reward_value,
+    estimate_net_cost,
     compare_cards_for_spend,
 )
 
@@ -146,6 +147,34 @@ def test_compare_ranks_ineligible_card_last():
     by_card = {r["card"]: r for r in res["top"]}
     assert by_card["Axis RuPay"]["approx_value_rupees"] == 0.0
     assert res["top"][0]["approx_value_rupees"] > 0  # the winner actually earns
+
+
+def test_net_cost_domestic_is_price_minus_reward():
+    # Amazon Rs.10,000 on ICICI (5%) -> net = 10000 - 500 = 9500, no forex.
+    r = estimate_net_cost("ICICI AmazonPay", 10000, "amazon")
+    assert r["reward_value"] == 500.0
+    assert r["forex_markup"] == 0.0
+    assert r["net_cost"] == 9500.0
+
+
+def test_net_cost_international_applies_forex():
+    # Uni GoldX has 0% forex; HDFC uses the 3.5% default. On a Rs.10,000 intl
+    # spend Uni GoldX should have the lower net cost.
+    uni = estimate_net_cost("Uni GoldX", 10000, "forex", is_international=True)
+    hdfc = estimate_net_cost(
+        "HDFC Regalia Gold", 10000, "shopping", is_international=True
+    )
+    assert uni["forex_markup"] == 0.0
+    assert hdfc["forex_markup"] == 350.0
+    assert uni["net_cost"] < hdfc["net_cost"]
+
+
+def test_compare_includes_net_cost_and_orders_by_it():
+    res = compare_cards_for_spend("amazon", 10000, top_n=3)
+    assert "net_cost" in res["top"][0]
+    nets = [r["net_cost"] for r in res["top"]]
+    assert nets == sorted(nets)  # ascending net cost
+    assert res["top"][0]["card"] == "ICICI AmazonPay"
 
 
 class _FakeCtx:

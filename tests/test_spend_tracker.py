@@ -14,6 +14,7 @@ from tools.spend_tracker import (
     get_spend_history,
     check_cap_status,
     check_fee_waiver_status,
+    assess_card_value,
     _STATE_KEY,
     _RETENTION_MONTHS,
 )
@@ -167,6 +168,29 @@ def test_unknown_card():
 def test_state_key_is_user_scoped():
     # Memory: user-scoped so spends persist across sessions, not just one chat.
     assert _STATE_KEY.startswith("user:")
+
+
+def test_assess_card_value_lifetime_free():
+    ctx = FakeToolContext()
+    r = assess_card_value(ctx, "ICICI AmazonPay")
+    assert r.get("lifetime_free") is True
+    assert "keep it" in r["verdict"].lower()
+
+
+def test_assess_card_value_fee_waived():
+    ctx = FakeToolContext()
+    record_spend(ctx, "misc", 250000, "HSBC Live+")  # > Rs.2L waiver
+    r = assess_card_value(ctx, "HSBC Live+")
+    assert r["waived"] is True
+    assert "waived" in r["verdict"].lower()
+
+
+def test_assess_card_value_fee_not_waived():
+    ctx = FakeToolContext()
+    record_spend(ctx, "misc", 50000, "HDFC Regalia Gold")  # < Rs.4L waiver
+    r = assess_card_value(ctx, "HDFC Regalia Gold")
+    assert r["waived"] is False
+    assert "not yet waived" in r["verdict"].lower()
 
 
 def test_spend_history_recall_across_months():

@@ -8,10 +8,16 @@ which keeps results reliable on small local models.
 All functions return JSON-serialisable dicts/lists.
 """
 
+import logging
 import re
 from typing import Optional
 
 from data.cards import CARDS, CARD_ALIASES, DECISION_MATRIX
+
+logger = logging.getLogger("optimizer.card_tools")
+
+# Default international markup (%) for cards that don't override it in config.
+_DEFAULT_FOREX_MARKUP_PCT = 3.5
 
 
 def _keyword_in_text(keyword: str, text: str) -> bool:
@@ -220,8 +226,63 @@ def estimate_reward_value(card_name: str, amount: float, category: str = "") -> 
     }
 
 
+def estimate_net_cost(
+    card_name: str,
+    amount: float,
+    category: str = "",
+    is_international: bool = False,
+) -> dict:
+    """Estimate the TRUE net cost of a transaction on a card: what it really costs
+    you after rewards and forex markup.
+
+        net_cost = price − reward_value + forex_markup
+
+    This is the honest "minimise net spend" number for a single transaction.
+    (Annual fees are not amortised per transaction — track those with
+    check_fee_waiver_status / assess_card_value.) Reward value is eligibility-
+    aware, so a card that earns nothing here contributes no reward.
+
+    Args:
+        card_name: Card to evaluate (fuzzy/alias accepted).
+        amount: Transaction price in Rupees.
+        category: Merchant/category hint (picks the right reward rate).
+        is_international: If True, apply the card's forex markup to the price.
+
+    Returns:
+        dict with ``card``, ``amount``, ``reward_value``, ``forex_markup``,
+        ``net_cost``, ``effective_rate_pct`` and ``eligible`` (or ``error``).
+    """
+    canonical = _resolve_card_name(card_name)
+    if not canonical:
+        return {"error": f"Unknown card: {card_name}"}
+
+    rv = estimate_reward_value(canonical, amount, category)
+    reward = rv["approx_value_rupees"]
+    markup_pct = (
+        CARDS[canonical].get("forex_markup_pct", _DEFAULT_FOREX_MARKUP_PCT)
+        if is_international
+        else 0.0
+    )
+    forex = round(amount * markup_pct / 100.0, 2)
+    net = round(amount - reward + forex, 2)
+    eff = round((reward - forex) / amount * 100.0, 2) if amount else 0.0
+    return {
+        "card": canonical,
+        "amount": amount,
+        "reward_value": reward,
+        "forex_markup": forex,
+        "net_cost": net,
+        "effective_rate_pct": eff,
+        "eligible": rv.get("eligible", True),
+    }
+
+
 def compare_cards_for_spend(
-    merchant_or_category: str, amount: float, top_n: int = 3, tool_context=None
+    merchant_or_category: str,
+    amount: float,
+    top_n: int = 3,
+    is_international: bool = False,
+    tool_context=None,
 ) -> dict:
     """Rank the whole portfolio for a spend and return the top N cards by value.
 
@@ -240,12 +301,13 @@ def compare_cards_for_spend(
 
     Returns:
         dict with ``query``, ``amount``, ``matrix_primary`` (the matrix's pick),
-        and ``top`` — a ranked list of
-        {rank, card, rate_pct, approx_value_rupees, is_matrix_primary}.
+        and ``top`` — a ranked list of {rank, card, rate_pct, approx_value_rupees,
+        net_cost, is_matrix_primary}, ordered by lowest net cost.
     """
     matrix = find_cards_for_category(merchant_or_category, amount)
     primary = matrix["matches"][0]["primary"] if matrix["matches"] else None
 
+    forex_default = _DEFAULT_FOREX_MARKUP_PCT
     ranked = []
     for name in CARDS:
         ev = estimate_reward_value(name, amount, merchant_or_category)
@@ -262,24 +324,35 @@ def compare_cards_for_spend(
                 if rate > base:
                     rate = base
                     value = round(amount * base / 100.0, 2)
+        markup_pct = (
+            CARDS[name].get("forex_markup_pct", forex_default)
+            if is_international
+            else 0.0
+        )
+        forex = round(amount * markup_pct / 100.0, 2)
+        net_cost = round(amount - value + forex, 2)
         ranked.append(
             {
                 "card": name,
                 "rate_pct": rate,
                 "approx_value_rupees": value,
+                "net_cost": net_cost,
                 "is_matrix_primary": name == primary,
             }
         )
-    # Sort by value, then keep the matrix primary ahead of ties.
-    ranked.sort(
-        key=lambda r: (r["approx_value_rupees"], r["is_matrix_primary"]), reverse=True
-    )
+    # Minimise net spend: lowest net cost wins; matrix primary breaks ties.
+    ranked.sort(key=lambda r: (r["net_cost"], not r["is_matrix_primary"]))
 
     n = max(1, min(int(top_n) if top_n else 3, len(ranked)))
-    top = []
-    for i, row in enumerate(ranked[:n], 1):
-        top.append({"rank": i, **row})
+    top = [{"rank": i, **row} for i, row in enumerate(ranked[:n], 1)]
 
+    logger.info(
+        "compare_cards_for_spend: query=%r amount=%s intl=%s -> winner=%s",
+        merchant_or_category,
+        amount,
+        is_international,
+        top[0]["card"] if top else None,
+    )
     return {
         "query": merchant_or_category,
         "amount": amount,

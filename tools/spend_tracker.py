@@ -24,6 +24,7 @@ State shape (under key ``user:spend_log``):
 """
 
 from datetime import datetime, timezone
+from typing import Optional
 
 from google.adk.tools import ToolContext
 
@@ -82,6 +83,23 @@ def _parse_amount(value) -> float:
     return float(s)  # may raise ValueError — caller handles it
 
 
+def apply_spend_to_log(
+    log: dict, month: str, category: str, amount: float, card: str = ""
+) -> Optional[str]:
+    """Add one spend into an in-memory log dict (shared by record_spend and the
+    CSV importer). Returns the canonical card name if the card resolved, else None.
+    ``amount`` must already be a positive float."""
+    bucket = _month_bucket(log, month)
+    cat = (category or "uncategorised").strip().lower()
+    bucket["by_category"][cat] = round(bucket["by_category"].get(cat, 0.0) + amount, 2)
+    canonical = _resolve_card_name(card) if card else None
+    if canonical:
+        bucket["by_card"][canonical] = round(
+            bucket["by_card"].get(canonical, 0.0) + amount, 2
+        )
+    return canonical
+
+
 def record_spend(
     tool_context: ToolContext, category: str, amount: float, card: str = ""
 ) -> str:
@@ -107,25 +125,18 @@ def record_spend(
 
     month = _current_month()
     log = _get_log(tool_context)
-    bucket = _month_bucket(log, month)
-
+    canonical = apply_spend_to_log(log, month, category, amt, card)
     cat = (category or "uncategorised").strip().lower()
-    bucket["by_category"][cat] = round(bucket["by_category"].get(cat, 0.0) + amt, 2)
-
-    canonical = _resolve_card_name(card) if card else None
-    if canonical:
-        bucket["by_card"][canonical] = round(
-            bucket["by_card"].get(canonical, 0.0) + amt, 2
-        )
 
     # Bound the durable store, then reassign so ADK detects the mutation.
     _prune_old_months(log)
     tool_context.state[_STATE_KEY] = log
 
+    month_total = log[month]["by_category"][cat]
     card_txt = f" on {canonical}" if canonical else ""
     return (
         f"Recorded Rs.{amt:,.0f} in '{cat}'{card_txt} for {month}. "
-        f"Month total for '{cat}': Rs.{bucket['by_category'][cat]:,.0f}."
+        f"Month total for '{cat}': Rs.{month_total:,.0f}."
     )
 
 
@@ -376,4 +387,71 @@ def check_fee_waiver_status(tool_context: ToolContext, card_name: str) -> dict:
             if remaining <= 0
             else f"Spend Rs.{remaining:,.0f} more this year to waive the {fee} fee."
         ),
+    }
+
+
+def assess_card_value(tool_context: ToolContext, card_name: str) -> dict:
+    """Is this card worth its annual fee? A rough ROI read from what you've spent
+    on it this year vs its fee (uses fee_waiver config + tracked spend).
+
+    Args:
+        card_name: Card to assess (fuzzy/alias accepted).
+
+    Returns:
+        dict with the annual fee, YTD spend on the card, an approximate rewards
+        estimate, whether the fee is waived, and a plain-language ``verdict``.
+    """
+    canonical = _resolve_card_name(card_name)
+    if not canonical:
+        return {"error": f"Unknown card: {card_name}"}
+
+    card = CARDS[canonical]
+    fw = card.get("fee_waiver", {}) or {}
+    year = datetime.now(timezone.utc).strftime("%Y")
+    log = _get_log(tool_context)
+    ytd = round(
+        sum(
+            b.get("by_card", {}).get(canonical, 0.0)
+            for m, b in log.items()
+            if m.startswith(year)
+        ),
+        2,
+    )
+    # Rough rewards estimate at the card's base rate (a conservative floor).
+    base_rate = card.get("value_back", {}).get("base_rate", 1.0)
+    est_rewards = round(ytd * base_rate / 100.0, 2)
+
+    if fw.get("lifetime_free"):
+        return {
+            "card": canonical,
+            "lifetime_free": True,
+            "annual_fee": 0,
+            "spend_ytd": ytd,
+            "est_rewards_ytd": est_rewards,
+            "verdict": "Lifetime-free — no fee to justify; keep it.",
+        }
+
+    fee = fw.get("fee", "")
+    threshold = fw.get("annual_spend")
+    waived = bool(threshold) and ytd >= threshold
+    if waived:
+        verdict = f"Fee {fee} is waived by your spend — effectively free."
+    elif threshold:
+        verdict = (
+            f"Fee {fee} not yet waived (Rs.{round(threshold - ytd):,} more spend "
+            f"needed). Weigh the fee against rewards/benefits if you won't reach it."
+        )
+    else:
+        verdict = (
+            f"Fee {fee} always applies — worth it only if milestones/benefits "
+            f"exceed the fee."
+        )
+    return {
+        "card": canonical,
+        "annual_fee": fee,
+        "waiver_threshold": threshold,
+        "spend_ytd": ytd,
+        "est_rewards_ytd": est_rewards,
+        "waived": waived,
+        "verdict": verdict,
     }
