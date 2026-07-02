@@ -405,8 +405,11 @@ OLLAMA_API_BASE=http://localhost:11434
 
 Want to try the **same Gemma agent** but don't have the RAM/GPU to run the model
 locally? Point it at [**Ollama Cloud**](https://ollama.com), which serves the
-hosted models over the identical Ollama chat API. In `config/model.config`,
-comment out the local `OLLAMA_API_BASE` and uncomment the cloud one:
+hosted models over the identical Ollama chat API. This exists mainly so
+**contributors without a powerful machine can still run and test the project** —
+it's an accessibility on-ramp, not the intended daily-use mode. In
+`config/model.config`, comment out the local `OLLAMA_API_BASE` and uncomment the
+cloud one:
 
 ```ini
 MODEL_PROVIDER=ollama
