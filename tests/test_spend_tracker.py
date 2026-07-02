@@ -129,20 +129,59 @@ def test_record_spend_rejects_non_positive_amount():
 
 
 def test_scapia_threshold_progress():
+    # Scapia unlocks on the PRECEDING month's spend. Seed last month below the
+    # Rs.20k bar -> lounge NOT unlocked for the current month.
     ctx = FakeToolContext()
-    record_spend(ctx, "travel", 12000, "Scapia Visa")
-    record_spend(ctx, "upi", 3000, "Scapia RuPay")  # both count toward Rs.20k
+    ctx.state[_STATE_KEY] = {
+        st._preceding_month(): {
+            "by_category": {},
+            "by_card": {"Scapia Visa": 12000.0, "Scapia RuPay": 3000.0},
+        }
+    }
     status = check_cap_status(ctx, "Scapia Visa")
-    assert status["spend_this_month"] == 15000.0
+    assert status["period"] == "preceding_month"
+    assert status["qualifying_month"] == st._preceding_month()
+    assert status["spend_preceding_month"] == 15000.0
     assert status["remaining_to_unlock"] == 5000.0
     assert status["met"] is False
 
 
 def test_scapia_threshold_met():
+    # Rs.21k spent last month across the two Scapia cards -> unlocked this month.
     ctx = FakeToolContext()
-    record_spend(ctx, "travel", 21000, "Scapia Visa")
+    ctx.state[_STATE_KEY] = {
+        st._preceding_month(): {
+            "by_category": {},
+            "by_card": {"Scapia Visa": 21000.0},
+        }
+    }
     status = check_cap_status(ctx, "Scapia Visa")
     assert status["met"] is True
+
+
+def test_scapia_current_month_spend_counts_toward_next_month():
+    # C6 regression: spending THIS month must not read as "unlocked this month";
+    # it counts toward NEXT month's access.
+    ctx = FakeToolContext()
+    record_spend(ctx, "travel", 25000, "Scapia Visa")  # lands in current month
+    status = check_cap_status(ctx, "Scapia Visa")
+    assert status["met"] is False
+    assert status["spend_preceding_month"] == 0.0
+    assert "NEXT month" in status["note"]
+
+
+def test_scapia_rupay_shares_the_threshold():
+    # The shared lounge threshold is now queryable from the RuPay side too.
+    ctx = FakeToolContext()
+    ctx.state[_STATE_KEY] = {
+        st._preceding_month(): {
+            "by_category": {},
+            "by_card": {"Scapia RuPay": 22000.0},
+        }
+    }
+    status = check_cap_status(ctx, "Scapia RuPay")
+    assert status["met"] is True
+    assert status["spend_preceding_month"] == 22000.0
 
 
 def test_amex_milestone_progress():
@@ -345,3 +384,14 @@ def test_config_driven_custom_card(custom_card):
     # Rs.7,000 eligible @ 8% = Rs.560 > Rs.500 cap => exhausted.
     assert status["exhausted"] is True
     assert status["cashback_earned"] == 500.0
+
+
+def test_hsbc_cap_counts_grocery_merchant_synonyms():
+    # C7 regression: quick-commerce grocery merchants that route to HSBC now
+    # count toward the shared cap (previously silently missed it).
+    ctx = FakeToolContext()
+    record_spend(ctx, "blinkit", 8000, "HSBC Live+")
+    record_spend(ctx, "zepto", 4000, "HSBC Live+")  # Rs.12k eligible @10% > cap
+    status = check_cap_status(ctx, "HSBC Live+")
+    assert status["eligible_spend_this_month"] == 12000.0
+    assert status["exhausted"] is True

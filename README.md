@@ -322,7 +322,7 @@ category `keywords` (with optional `min_amount` / `max_amount` bands) to a
 | `type` | Fields | Tracks |
 |--------|--------|--------|
 | `combined_monthly_cashback` | `categories`, `rate`, `cap_value` | A cashback cap shared across categories within a month. |
-| `monthly_spend_threshold` | `threshold`, `counts_cards` _(optional)_ | A monthly spend target (optionally summing several cards). |
+| `monthly_spend_threshold` | `threshold`, `counts_cards` _(optional)_, `period` _(optional)_ | A monthly spend target (optionally summing several cards). Set `period: "preceding_month"` when the benefit qualifies on last month's spend (e.g. Scapia lounge: Rs.20k last month unlocks this month); defaults to the current month. |
 | `annual_spend_milestone` | `target` | Year-to-date spend toward an annual milestone. |
 
 You can also tune the agent's behaviour in

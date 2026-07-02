@@ -392,3 +392,36 @@ def test_forex_assumed_flag_when_field_missing():
     # Domestic spend -> no forex assumption in play.
     dom = estimate_net_cost("HDFC Regalia Gold", 10000, "shopping")
     assert dom["forex_assumed"] is False
+
+
+# --- Config keyword-collision regressions (deferred config pass) ------------
+
+
+def test_generic_premium_no_longer_hijacks_forex_card():
+    # "premium" removed from the Forex/Gold rule: a subscription must not route
+    # to Uni GoldX just because it says "Premium".
+    assert find_cards_for_category("Netflix Premium subscription", 649)["matches"] == []
+
+
+def test_generic_gold_no_longer_matches_unrelated_merchants():
+    # bare "gold" removed -> "Gold's Gym" no longer routes to the gold card.
+    assert find_cards_for_category("Gold's Gym membership", 2000)["matches"] == []
+
+
+def test_specific_gold_purchase_still_routes_to_uni_goldx():
+    assert _primary("gold jewellery purchase", 50000) == "Uni GoldX"
+
+
+def test_generic_booking_no_longer_routes_to_hdfc():
+    # "booking" removed -> a bus booking must not hit the SmartBuy travel rule.
+    assert find_cards_for_category("bus booking", 800)["matches"] == []
+
+
+def test_hotel_smartbuy_still_routes_to_hdfc():
+    # Removing "booking" must not break the legitimate travel route.
+    assert _primary("hotel via SmartBuy", 25000) == "HDFC Regalia Gold"
+
+
+def test_iphone_now_routes_to_electronics():
+    # "iphone" keyword added -> a flagship phone is no longer unrouted.
+    assert _primary("buying an iphone", 80000) == "Amex Platinum Travel"

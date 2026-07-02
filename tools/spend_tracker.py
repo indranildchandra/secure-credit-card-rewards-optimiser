@@ -48,6 +48,14 @@ def _current_month() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m")
 
 
+def _preceding_month() -> str:
+    """The calendar month immediately before the current one (YYYY-MM)."""
+    now = datetime.now(timezone.utc)
+    if now.month == 1:
+        return f"{now.year - 1}-12"
+    return f"{now.year}-{now.month - 1:02d}"
+
+
 def _get_log(tool_context: ToolContext) -> dict:
     return tool_context.state.get(_STATE_KEY) or {}
 
@@ -314,6 +322,35 @@ def check_cap_status(tool_context: ToolContext, card_name: str) -> dict:
     if ttype == "monthly_spend_threshold":
         threshold = tracker.get("threshold", 0)
         cards = tracker.get("counts_cards", [canonical])
+        # Some benefits qualify on the PRECEDING month's spend (e.g. Scapia's
+        # lounge: Rs.20k spent last month unlocks lounge THIS month). For those,
+        # sum the preceding month; otherwise the current month.
+        if tracker.get("period") == "preceding_month":
+            qmonth = _preceding_month()
+            qbucket = _get_log(tool_context).get(
+                qmonth, {"by_category": {}, "by_card": {}}
+            )
+            qby_card = qbucket.get("by_card", {})
+            counted = round(sum(qby_card.get(c, 0.0) for c in cards), 2)
+            remaining = round(max(threshold - counted, 0.0), 2)
+            met = remaining <= 0
+            return {
+                "card": canonical,
+                "threshold": f"Rs.{threshold:,.0f} in the preceding month — {label}",
+                "period": "preceding_month",
+                "qualifying_month": qmonth,
+                "spend_preceding_month": counted,
+                "remaining_to_unlock": remaining,
+                "met": met,
+                "note": (
+                    f"Unlocked for this month — Rs.{counted:,.0f} spent in "
+                    f"{qmonth} (>= Rs.{threshold:,.0f})."
+                    if met
+                    else f"Not unlocked: only Rs.{counted:,.0f} spent in {qmonth} "
+                    f"(needed Rs.{threshold:,.0f}). This month's spend counts "
+                    "toward NEXT month's access."
+                ),
+            }
         counted = round(sum(by_card.get(c, 0.0) for c in cards), 2)
         remaining = round(max(threshold - counted, 0.0), 2)
         return {
