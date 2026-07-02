@@ -67,6 +67,68 @@ def _resolve_card_name(card_name: str) -> Optional[str]:
     return None
 
 
+def _all_matching_card_names(card_name: str) -> list:
+    """Every canonical card a fuzzy reference could mean (for disambiguation).
+
+    Same precision tiers as ``_resolve_card_name`` but COLLECTS every card at the
+    first tier that produces a match, instead of silently returning the first.
+    An exact name/alias is unambiguous (one element); an issuer/brand-only query
+    like "axis", "scapia" or "hdfc" returns every card the user holds under it,
+    so the caller can ask which one they mean before acting.
+    """
+    if not card_name:
+        return []
+    key = card_name.strip().lower()
+
+    # 1. exact name/alias -> unambiguous.
+    if key in CARD_ALIASES:
+        return [CARD_ALIASES[key]]
+
+    def _collect(predicate) -> list:
+        out = []
+        for alias, canonical in CARD_ALIASES.items():
+            if predicate(alias) and canonical not in out:
+                out.append(canonical)
+        return out
+
+    # 2. a full alias appears inside the query (e.g. "my axis rewards card").
+    found = _collect(lambda alias: alias in key)
+    # 3. a specific-enough query (>=4 chars) is contained in an alias
+    #    (e.g. "axis" is inside BOTH "axis rewards" and "axis rupay").
+    if not found and len(key) >= 4:
+        found = _collect(lambda alias: key in alias)
+    # 4. whole-token overlap (every query token is a token of a card name).
+    if not found:
+        key_toks = set(key.split())
+        found = [c for c in CARDS if key_toks and key_toks <= set(c.lower().split())]
+    return sorted(found)
+
+
+def find_matching_cards(card_name: str) -> dict:
+    """List every portfolio card a loosely-named reference could mean.
+
+    Use this to DISAMBIGUATE before acting on a card the user named loosely. If
+    they say only an issuer/brand ("Axis", "HDFC", "Scapia") and hold more than
+    one such card, this returns all of them so you can ask which they mean rather
+    than guessing.
+
+    Args:
+        card_name: The user's card reference, possibly ambiguous (e.g. "axis").
+
+    Returns:
+        dict with ``query``, ``matches`` (canonical card names), ``count`` and
+        ``ambiguous`` (True when more than one card matches — ask the user which
+        one before proceeding). ``matches`` is empty for an unknown reference.
+    """
+    matches = _all_matching_card_names(card_name)
+    return {
+        "query": card_name,
+        "matches": matches,
+        "count": len(matches),
+        "ambiguous": len(matches) > 1,
+    }
+
+
 def find_cards_for_category(merchant_or_category: str, amount: float = 0.0) -> dict:
     """Find the best card(s) for a transaction from the decision matrix.
 

@@ -13,10 +13,12 @@ def _tool_names(agent):
 
 
 def test_root_is_thin_router():
-    # 6 hot card/value tools + spend_manager sub-agent + web-search = 8.
-    assert len(optimizer.root_agent.tools) == 8
+    # 7 hot card/value tools (incl. find_matching_cards for disambiguation) +
+    # spend_manager sub-agent + web-search = 9.
+    assert len(optimizer.root_agent.tools) == 9
     names = _tool_names(optimizer.root_agent)
     assert "estimate_net_cost" in names
+    assert "find_matching_cards" in names  # reverse-prompt disambiguation
     assert "spend_manager" in names  # the AgentTool wrapping the sub-agent
     # Spend tools live in the sub-agent now, not on the root.
     assert "get_spend_history" not in names

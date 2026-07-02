@@ -6,6 +6,7 @@ each worked example to the right card.
 
 from tools.card_tools import (
     find_cards_for_category,
+    find_matching_cards,
     get_card_details,
     list_all_cards,
     estimate_reward_value,
@@ -193,3 +194,63 @@ def test_compare_is_cap_aware_when_state_available():
     hsbc = next(r for r in res["top"] if r["card"] == "HSBC Live+")
     # Cap exhausted -> dining now earns base 1.5%, not 10%.
     assert hsbc["rate_pct"] == 1.5
+
+
+# --- Disambiguation / reverse-prompting support ----------------------------
+
+
+def test_find_matching_cards_issuer_is_ambiguous():
+    # Portfolio holds two Axis cards -> "axis" must return both, flagged ambiguous
+    # so the agent reverse-prompts instead of silently picking one.
+    res = find_matching_cards("axis")
+    assert res["ambiguous"] is True
+    assert set(res["matches"]) == {"Axis Rewards", "Axis RuPay"}
+    assert res["count"] == 2
+
+
+def test_find_matching_cards_brand_is_ambiguous():
+    res = find_matching_cards("scapia")
+    assert res["ambiguous"] is True
+    assert set(res["matches"]) == {"Scapia Visa", "Scapia RuPay"}
+
+
+def test_find_matching_cards_exact_name_is_unambiguous():
+    res = find_matching_cards("Axis Rewards")
+    assert res["ambiguous"] is False
+    assert res["matches"] == ["Axis Rewards"]
+
+
+def test_find_matching_cards_alias_is_unambiguous():
+    # An alias resolves to exactly one card.
+    res = find_matching_cards("Citi Rewards")
+    assert res["ambiguous"] is False
+    assert res["matches"] == ["Axis Rewards"]
+
+
+def test_find_matching_cards_single_issuer_not_ambiguous():
+    # Only one HDFC card in the default portfolio -> unambiguous.
+    res = find_matching_cards("hdfc")
+    assert res["ambiguous"] is False
+    assert res["matches"] == ["HDFC Regalia Gold"]
+
+
+def test_find_matching_cards_unknown_returns_empty():
+    res = find_matching_cards("totally fake card")
+    assert res["matches"] == []
+    assert res["ambiguous"] is False
+
+
+def test_find_matching_cards_scales_via_config():
+    # Config-driven: add a second HDFC card purely as data and "hdfc" becomes
+    # ambiguous with no code change (proves it scales to the user's real wallet).
+    from data.cards import CARDS, CARD_ALIASES
+
+    CARDS["HDFC Millennia"] = {"value_back": {"top_rate": 5.0, "base_rate": 1.0}}
+    CARD_ALIASES["hdfc millennia"] = "HDFC Millennia"
+    try:
+        res = find_matching_cards("hdfc")
+        assert res["ambiguous"] is True
+        assert set(res["matches"]) == {"HDFC Regalia Gold", "HDFC Millennia"}
+    finally:
+        CARDS.pop("HDFC Millennia", None)
+        CARD_ALIASES.pop("hdfc millennia", None)

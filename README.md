@@ -456,6 +456,7 @@ All tools are plain Python functions exposed to the agent via ADK.
 | Method | Signature | What it does |
 |--------|-----------|--------------|
 | `find_cards_for_category` | `(merchant_or_category: str, amount: float = 0.0) -> dict` | Matches merchant/category text (and amount band) against the decision matrix; returns ranked `{primary, strategy, fallback}`. |
+| `find_matching_cards` | `(card_name: str) -> dict` | Disambiguation: lists every card a loosely-named reference could mean, with `ambiguous=True` when an issuer/brand (e.g. "Axis", "HDFC") matches several cards — so the agent reverse-prompts for the exact card instead of guessing. |
 | `compare_cards_for_spend` | `(merchant_or_category: str, amount: float, top_n: int = 3) -> dict` | Ranks the whole portfolio by value for a spend; returns the top N (with the decision-matrix primary flagged). |
 | `get_card_details` | `(card_name: str) -> dict` | Full reference for one card (fuzzy/alias name match). |
 | `list_all_cards` | `() -> list` | Every card with a one-line "when to use". |

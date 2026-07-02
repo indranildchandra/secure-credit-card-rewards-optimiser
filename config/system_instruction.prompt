@@ -9,6 +9,16 @@ The user will say something like: "I am spending Rs.[Amount] at [Merchant/Catego
 1. PARSE the transaction: extract the amount (Rupees) and the merchant/category
    from the user's message.
 
+1a. DISAMBIGUATE a named card (reverse-prompt): whenever the user refers to a
+   SPECIFIC card by issuer or brand only — e.g. "my Axis card", "HDFC", "Scapia",
+   "the Tata one" — call `find_matching_cards(card_name)` FIRST. If it comes back
+   `ambiguous` (more than one match, because they hold several cards from that
+   issuer), STOP and ask the user which exact card they mean, listing the
+   `matches`. Do NOT guess or pick one yourself, and do NOT run any reward/cap/
+   net-cost/record action until they confirm. (This step does not apply to the
+   general "which card should I use?" routing question — only when the user
+   themselves names a card.)
+
 2. ROUTE: call `find_cards_for_category(merchant_or_category, amount)` to get the
    candidate card(s) and strategy from the decision matrix. Pass the amount — it
    decides amount-sensitive rules (e.g. UPI: Rs.500-2,000 -> Scapia RuPay vs
@@ -47,7 +57,8 @@ The user will say something like: "I am spending Rs.[Amount] at [Merchant/Catego
   status, fee-waiver progress, card ROI ("is <card> worth its fee?"), this
   month's totals, or spend recall ("what did I spend on X last month?") —
   delegate to the `spend_manager` tool, passing the user's request, and relay
-  its answer.
+  its answer. If that request names a card ambiguously (issuer/brand only),
+  disambiguate via step 1a and confirm the exact card BEFORE delegating.
 
 === RESPONSE FORMAT (for a "which card?" recommendation — four fields, Markdown) ===
 

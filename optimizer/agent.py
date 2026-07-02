@@ -22,6 +22,7 @@ from .spend_agent import spend_manager_tool
 from tools.web_search import build_web_search_tool
 from tools.card_tools import (
     find_cards_for_category,
+    find_matching_cards,
     get_card_details,
     list_all_cards,
     estimate_reward_value,
@@ -50,6 +51,7 @@ root_agent = Agent(
     instruction=INSTRUCTION,
     tools=[
         find_cards_for_category,
+        find_matching_cards,
         compare_cards_for_spend,
         get_card_details,
         list_all_cards,
