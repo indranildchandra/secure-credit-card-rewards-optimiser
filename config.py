@@ -10,10 +10,15 @@ Exports:
   IS_GEMINI           — True when the provider is not Ollama (selects the web-
                         search backend in optimizer/agent.py: Google Search
                         grounding for Gemini vs DuckDuckGo for Ollama).
+  IS_REMOTE_LLM       — True when the LLM runs off-device (Gemini, or Ollama
+                        pointed at Ollama Cloud). False for a local Ollama daemon.
+                        Anything downstream that must know "is this offline?"
+                        should read this, not IS_GEMINI.
   LLM_TIMEOUT_SECONDS — per-LLM-call timeout applied to the local (Ollama) path.
 """
 
 import os
+from urllib.parse import urlparse
 
 # Load .env early so OLLAMA_CLOUD_API_KEY / OLLAMA_API_KEY (git-ignored secrets)
 # are available before we build the model handle. Silent no-op if python-dotenv
@@ -55,16 +60,32 @@ LLM_TIMEOUT_SECONDS = _safe_int(_config.get("LLM_TIMEOUT_SECONDS"), 180)
 if "OLLAMA_API_BASE" in _config:
     os.environ.setdefault("OLLAMA_API_BASE", _config["OLLAMA_API_BASE"])
 
+# Hosts we recognise as Ollama Cloud — the ONLY remote Ollama endpoint we attach
+# credentials to. This is an allowlist, not a loopback denylist: anything not
+# matched here (loopback, LAN, RFC1918 private IPs, a self-hosted box) is treated
+# as a local daemon and is NEVER sent the API key. Add your own hosted endpoint
+# here if you self-host Ollama behind auth.
+_OLLAMA_CLOUD_HOSTS = ("ollama.com",)
 
-def _is_remote_host(api_base: str) -> bool:
-    """True when the Ollama endpoint is not a loopback address — i.e. a hosted
-    service like Ollama Cloud (https://ollama.com) that needs bearer auth. We
-    only attach the API key for remote hosts so a stray key can never be sent to
-    a local daemon (and local stays credential-free by design)."""
-    host = (api_base or "").lower()
-    return not any(
-        local in host for local in ("localhost", "127.0.0.1", "0.0.0.0", "[::1]")
-    )
+
+def _is_ollama_cloud(api_base: str) -> bool:
+    """True only when api_base's hostname is a known Ollama Cloud host (exact
+    match or a subdomain of one). Parses the URL and compares the hostname —
+    no substring scanning of the whole string, so `localhost.evil.com` or
+    `ollama.com.attacker.net` cannot masquerade as either class."""
+    if not api_base:
+        return False
+    # urlparse needs a scheme to populate .hostname; add one if it's bare.
+    parsed = urlparse(api_base if "://" in api_base else f"//{api_base}")
+    host = (parsed.hostname or "").lower()
+    return any(host == h or host.endswith("." + h) for h in _OLLAMA_CLOUD_HOSTS)
+
+
+# True when inference leaves the machine: Gemini, or Ollama aimed at the cloud.
+# Read THIS (not IS_GEMINI) for any "is this offline?" decision.
+IS_REMOTE_LLM = IS_GEMINI or (
+    _provider == "ollama" and _is_ollama_cloud(os.environ.get("OLLAMA_API_BASE", ""))
+)
 
 
 if _provider == "ollama":
@@ -82,14 +103,15 @@ if _provider == "ollama":
 
     # LiteLLM forwards these kwargs to the Ollama chat provider. api_base points
     # at the daemon (local default) or a hosted endpoint; api_key is attached
-    # ONLY for a remote host, where LiteLLM sends it as `Authorization: Bearer`.
-    # This is the ADK/LiteLLM-native equivalent of the raw Ollama client's
-    # host=... + headers={"Authorization": "Bearer ..."} — same wire result.
+    # ONLY for a known cloud host, where LiteLLM sends it as `Authorization:
+    # Bearer`. This is the ADK/LiteLLM-native equivalent of the raw Ollama
+    # client's host=... + headers={"Authorization": "Bearer ..."} — same wire
+    # result.
     _ollama_kwargs = {}
     _api_base = os.environ.get("OLLAMA_API_BASE", "").strip()
     if _api_base:
         _ollama_kwargs["api_base"] = _api_base
-    if _is_remote_host(_api_base):
+    if _is_ollama_cloud(_api_base):
         _api_key = (
             os.environ.get("OLLAMA_CLOUD_API_KEY")
             or os.environ.get("OLLAMA_API_KEY")
@@ -103,3 +125,5 @@ else:
     MODEL = _model_name
 
 print(f" Model config: provider={_provider}, model={_model_name}")
+if IS_REMOTE_LLM:
+    print("⚠ reasoning is going to a remote host — not offline")

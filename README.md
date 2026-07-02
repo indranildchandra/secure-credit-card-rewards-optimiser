@@ -413,7 +413,7 @@ cloud one:
 
 ```ini
 MODEL_PROVIDER=ollama
-MODEL_NAME=gemma4:e2b          # use a tag your Ollama Cloud account serves
+MODEL_NAME=gemma4:e2b
 OLLAMA_API_BASE=https://ollama.com
 ```
 
@@ -423,13 +423,14 @@ Then `cp .env.example .env` and set your key:
 OLLAMA_CLOUD_API_KEY=your_ollama_cloud_key_here
 ```
 
-The key is sent as an `Authorization: Bearer` header **only** because the host is
-remote — a local `OLLAMA_API_BASE` (`localhost`/`127.0.0.1`) stays
-credential-free, so a stray key can never leak to your local daemon. Under the
-hood this is the ADK/LiteLLM-native equivalent of the raw Ollama client's
-`host=...` + `headers={"Authorization": "Bearer ..."}` — same request on the
-wire. Note this is **not offline** (reasoning leaves your machine), so use it for
-testing rather than daily use.
+The key is attached as an `Authorization: Bearer` header **only** when
+`OLLAMA_API_BASE` points at a recognised Ollama Cloud host (`ollama.com`) — an
+allowlist, so a loopback, LAN, or self-hosted daemon stays credential-free and a
+stray key can never leak to it. Under the hood this is the ADK/LiteLLM-native
+equivalent of the raw Ollama client's `host=...` +
+`headers={"Authorization": "Bearer ..."}` — same request on the wire. Because
+inference now leaves the machine, startup prints `⚠ reasoning is going to a
+remote host — not offline`; use this path for testing rather than daily use.
 
 ### Optional cloud path: Gemini
 
