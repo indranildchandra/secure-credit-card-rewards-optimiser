@@ -12,6 +12,8 @@ import logging
 import re
 from typing import Optional
 
+from google.adk.tools import ToolContext
+
 from data.cards import CARDS, CARD_ALIASES, DECISION_MATRIX
 
 logger = logging.getLogger("optimizer.card_tools")
@@ -282,7 +284,7 @@ def compare_cards_for_spend(
     amount: float,
     top_n: int = 3,
     is_international: bool = False,
-    tool_context=None,
+    tool_context: Optional[ToolContext] = None,
 ) -> dict:
     """Rank the whole portfolio for a spend and return the top N cards by value.
 
