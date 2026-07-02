@@ -165,6 +165,52 @@ def test_unknown_card():
     assert "error" in check_cap_status(ctx, "totally fake card")
 
 
+def test_record_spend_rejects_non_finite_amount():
+    # inf/nan must be rejected like garbage — they would poison cap/threshold
+    # totals if they slipped past the ``amt <= 0`` guard.
+    ctx = FakeToolContext()
+    for bad in (float("inf"), float("-inf"), float("nan"), "inf", "nan"):
+        msg = record_spend(ctx, "dining", bad, "HSBC Live+")
+        assert "Could not read the amount" in msg
+    assert get_spend_summary(ctx)["by_category"] == {}  # nothing recorded
+
+
+def test_check_cap_status_ambiguous_card():
+    # An issuer-only reference matching >1 held card is ambiguous: the tool must
+    # surface the ambiguity (ask which card) instead of guessing one.
+    ctx = FakeToolContext()
+    res = check_cap_status(ctx, "Axis")
+    assert res.get("ambiguous") is True
+    assert set(res["matches"]) == {"Axis Rewards", "Axis RuPay"}
+
+
+def test_check_fee_waiver_status_ambiguous_card():
+    ctx = FakeToolContext()
+    res = check_fee_waiver_status(ctx, "Scapia")
+    assert res.get("ambiguous") is True
+    assert set(res["matches"]) == {"Scapia Visa", "Scapia RuPay"}
+
+
+def test_assess_card_value_ambiguous_card():
+    ctx = FakeToolContext()
+    res = assess_card_value(ctx, "Axis")
+    assert res.get("ambiguous") is True
+    assert set(res["matches"]) == {"Axis Rewards", "Axis RuPay"}
+
+
+def test_record_spend_ambiguous_card_records_nothing():
+    # Critical privacy/correctness invariant: an ambiguous "record Rs.X on my Axis
+    # card" must ask which card and mutate NO durable state.
+    ctx = FakeToolContext()
+    msg = record_spend(ctx, "dining", 1500, "Axis")
+    assert isinstance(msg, str)
+    # No spend recorded under any category or card.
+    summary = get_spend_summary(ctx)
+    assert summary["by_category"] == {}
+    assert summary["by_card"] == {}
+    assert ctx.state.get(_STATE_KEY) in (None, {})
+
+
 def test_state_key_is_user_scoped():
     # Memory: user-scoped so spends persist across sessions, not just one chat.
     assert _STATE_KEY.startswith("user:")
@@ -190,7 +236,22 @@ def test_assess_card_value_fee_not_waived():
     record_spend(ctx, "misc", 50000, "HDFC Regalia Gold")  # < Rs.4L waiver
     r = assess_card_value(ctx, "HDFC Regalia Gold")
     assert r["waived"] is False
-    assert "not yet waived" in r["verdict"].lower()
+    # ROI verdict now compares estimated rewards against the parsed fee (Rs.2,500)
+    # rather than a generic "not yet waived" line.
+    v = r["verdict"].lower()
+    assert "rewards" in v and "vs" in v and "2,500" in v
+
+
+def test_assess_card_value_roi_beats_fee():
+    # R-ROI: est. YTD rewards that exceed the parsed fee produce a positive
+    # rewards-vs-fee verdict (fee "Rs.2,500" parsed to 2500; not yet waived).
+    ctx = FakeToolContext()
+    record_spend(ctx, "misc", 300000, "HDFC Regalia Gold")  # base 1% => ~Rs.3,000
+    r = assess_card_value(ctx, "HDFC Regalia Gold")
+    assert r["waived"] is False  # waiver threshold is Rs.4L
+    assert r["est_rewards_ytd"] == 3000.0
+    v = r["verdict"].lower()
+    assert "3,000" in v and "2,500" in v and "vs" in v
 
 
 def test_assess_card_value_missing_fee_info():

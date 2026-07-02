@@ -32,6 +32,16 @@ _VALID_TRACKER_TYPES = {
 }
 
 
+def _is_number(x) -> bool:
+    """True for a real numeric value (ints/floats), excluding bools."""
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def _is_str_list(x) -> bool:
+    """True for a list whose every element is a string (empty list allowed)."""
+    return isinstance(x, list) and all(isinstance(item, str) for item in x)
+
+
 def validate_config(data: dict) -> list:
     """Return a list of human-readable problems with a cards.config structure.
 
@@ -60,12 +70,74 @@ def validate_config(data: dict) -> list:
                 problems.append(
                     f"card '{name}': value_back needs numeric top_rate and base_rate"
                 )
+            elif vb.get("top_keywords") is not None and not _is_str_list(
+                vb.get("top_keywords")
+            ):
+                problems.append(
+                    f"card '{name}': value_back.top_keywords must be a list of strings"
+                )
         tr = card.get("tracker")
-        if tr is not None and tr.get("type") not in _VALID_TRACKER_TYPES:
-            problems.append(
-                f"card '{name}': tracker.type must be one of "
-                f"{sorted(_VALID_TRACKER_TYPES)}"
-            )
+        if tr is not None:
+            ttype = tr.get("type") if isinstance(tr, dict) else None
+            if ttype not in _VALID_TRACKER_TYPES:
+                problems.append(
+                    f"card '{name}': tracker.type must be one of "
+                    f"{sorted(_VALID_TRACKER_TYPES)}"
+                )
+            elif ttype == "annual_spend_milestone":
+                target = tr.get("target")
+                if not (_is_number(target) and target > 0):
+                    problems.append(
+                        f"card '{name}': tracker '{ttype}' needs a positive numeric "
+                        "'target'"
+                    )
+            elif ttype == "monthly_spend_threshold":
+                threshold = tr.get("threshold")
+                if not (_is_number(threshold) and threshold > 0):
+                    problems.append(
+                        f"card '{name}': tracker '{ttype}' needs a positive numeric "
+                        "'threshold'"
+                    )
+            elif ttype == "combined_monthly_cashback":
+                cap_value = tr.get("cap_value")
+                if not (_is_number(cap_value) and cap_value > 0):
+                    problems.append(
+                        f"card '{name}': tracker '{ttype}' needs a positive numeric "
+                        "'cap_value'"
+                    )
+                rate = tr.get("rate")
+                if not (_is_number(rate) and 0 < rate <= 1):
+                    problems.append(
+                        f"card '{name}': tracker '{ttype}' needs a numeric 'rate' "
+                        "as a fraction between 0 and 1"
+                    )
+                if not (_is_str_list(tr.get("categories")) and tr.get("categories")):
+                    problems.append(
+                        f"card '{name}': tracker '{ttype}' needs a non-empty "
+                        "'categories' list of strings"
+                    )
+
+        min_txn = card.get("min_txn")
+        if min_txn is not None and not _is_number(min_txn):
+            problems.append(f"card '{name}': min_txn must be a number")
+
+        forex = card.get("forex_markup_pct")
+        if forex is not None and not _is_number(forex):
+            problems.append(f"card '{name}': forex_markup_pct must be a number")
+
+        for field in ("no_reward_categories", "aliases"):
+            value = card.get(field)
+            if value is not None and not _is_str_list(value):
+                problems.append(f"card '{name}': {field} must be a list of strings")
+
+        fw = card.get("fee_waiver")
+        if isinstance(fw, dict):
+            annual_spend = fw.get("annual_spend")
+            if annual_spend is not None and not _is_number(annual_spend):
+                problems.append(
+                    f"card '{name}': fee_waiver.annual_spend must be a number "
+                    "when present"
+                )
 
     for i, rule in enumerate(matrix):
         if not isinstance(rule, dict):

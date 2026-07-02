@@ -43,6 +43,37 @@ def test_is_affirmative_negation_aware():
     assert not setup_cards._is_affirmative("wrong, cancel that")
 
 
+def test_is_affirmative_contracted_refusals():
+    # A refusal must never read as consent even though it embeds an affirm word
+    # like "approve"/"confirm"/"yes". The tokeniser keeps the apostrophe, so
+    # modal-negative contractions ("cannot"/"can't"/"won't") veto the affirm.
+    assert not setup_cards._is_affirmative("I cannot approve this")
+    assert not setup_cards._is_affirmative("I won't confirm")
+    assert not setup_cards._is_affirmative("I can't say yes")
+    assert not setup_cards._is_affirmative("I couldn't approve that")
+    assert not setup_cards._is_affirmative("never save it")
+    assert not setup_cards._is_affirmative("nope")
+
+
+def test_is_affirmative_correction_blocks():
+    # An affirmation paired with a correction cue is a change request, not an
+    # approval of the current proposal.
+    assert not setup_cards._is_affirmative("looks perfect, but change the fee first")
+    assert not setup_cards._is_affirmative("yes, but fix the reward rate")
+    assert not setup_cards._is_affirmative("ok, actually update the cap instead")
+    assert not setup_cards._is_affirmative("save it, except edit the forex markup")
+
+
+def test_is_affirmative_genuine_still_pass():
+    # The existing true-positive guarantee must hold.
+    assert setup_cards._is_affirmative("yes")
+    assert setup_cards._is_affirmative("ok")
+    assert setup_cards._is_affirmative("confirm")
+    assert setup_cards._is_affirmative("save it")
+    assert setup_cards._is_affirmative("looks good")
+    assert setup_cards._is_affirmative("go ahead")
+
+
 def test_write_gate_blocks_without_confirmation():
     tool = SimpleNamespace(name="save_card")
     result = setup_cards.require_confirmation_before_write(

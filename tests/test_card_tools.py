@@ -254,3 +254,141 @@ def test_find_matching_cards_scales_via_config():
     finally:
         CARDS.pop("HDFC Millennia", None)
         CARD_ALIASES.pop("hdfc millennia", None)
+
+
+# --- Ambiguity gate on the name-taking tools --------------------------------
+
+
+def test_resolve_card_or_ambiguity_contract():
+    from tools.card_tools import resolve_card_or_ambiguity
+
+    canonical, amb = resolve_card_or_ambiguity("amex")
+    assert canonical == "Amex Platinum Travel" and amb is None
+    canonical, amb = resolve_card_or_ambiguity("axis")
+    assert canonical is None and amb and amb["ambiguous"] is True
+    assert set(amb["matches"]) == {"Axis Rewards", "Axis RuPay"}
+    canonical, amb = resolve_card_or_ambiguity("totally fake card")
+    assert canonical is None and amb is None
+
+
+def test_get_card_details_ambiguous_issuer():
+    # Two Axis cards -> "axis" must signal ambiguity, not silently pick one.
+    d = get_card_details("axis")
+    assert d.get("ambiguous") is True
+    assert set(d["matches"]) == {"Axis Rewards", "Axis RuPay"}
+
+
+def test_estimate_reward_value_ambiguous_issuer():
+    r = estimate_reward_value("scapia", 5000, "travel")
+    assert r.get("ambiguous") is True
+    assert set(r["matches"]) == {"Scapia Visa", "Scapia RuPay"}
+
+
+def test_estimate_net_cost_ambiguous_issuer():
+    r = estimate_net_cost("axis", 5000, "shopping")
+    assert r.get("ambiguous") is True
+    assert set(r["matches"]) == {"Axis Rewards", "Axis RuPay"}
+
+
+# --- Value-based routing (not keyword length) -------------------------------
+
+
+def test_macbook_at_croma_routes_by_value_not_keyword_length():
+    # "croma" (5 chars) is shorter than "macbook" (7), so the old length-based
+    # score wrongly picked Amex (large-misc). Croma is a Tata brand at 10% value,
+    # so value ranking must pick Tata Neu Infinity — and it must AGREE with the
+    # value ranking from compare_cards_for_spend.
+    assert _primary("MacBook at Croma", 150000) == "Tata Neu Infinity"
+    res = compare_cards_for_spend("MacBook at Croma", 150000, top_n=1)
+    assert res["top"][0]["card"] == "Tata Neu Infinity"
+
+
+def test_find_cards_amount_unknown_flags_upi_tiers():
+    # No amount -> both UPI tiers match and we can't value-rank; the note must
+    # surface the amount-dependence rather than silently picking a tier.
+    res = find_cards_for_category("UPI merchant payment", 0)
+    assert res["matches"]
+    assert "amount" in res["note"].lower()
+
+
+# --- Cap-aware blended valuation --------------------------------------------
+
+
+def test_compare_blended_partial_cap():
+    from tools.spend_tracker import record_spend
+
+    ctx = _FakeCtx()
+    # HSBC combined cap: Rs.1,000/month @10% -> Rs.10,000 eligible-spend ceiling.
+    # Rs.8,000 dining already spent -> Rs.2,000 of headroom left.
+    record_spend(ctx, "dining", 8000, "HSBC Live+")
+    # A Rs.5,000 dining spend: Rs.2,000 @10% + Rs.3,000 @1.5% = 200 + 45 = 245.
+    res = compare_cards_for_spend("dining", 5000, top_n=11, tool_context=ctx)
+    hsbc = next(r for r in res["top"] if r["card"] == "HSBC Live+")
+    assert hsbc["approx_value_rupees"] == 245.0
+    assert hsbc["rate_pct"] == 4.9  # blended effective rate 245/5000
+
+
+def test_estimate_net_cost_is_cap_aware_when_context_given():
+    from tools.spend_tracker import record_spend
+
+    ctx = _FakeCtx()
+    record_spend(ctx, "dining", 8000, "HSBC Live+")  # Rs.2,000 headroom left
+    r = estimate_net_cost("HSBC Live+", 5000, "dining", tool_context=ctx)
+    assert r["reward_value"] == 245.0  # blended, not the full 10%
+    # Without context the estimate stays un-capped (schema/behaviour unchanged).
+    r2 = estimate_net_cost("HSBC Live+", 5000, "dining")
+    assert r2["reward_value"] == 500.0
+
+
+# --- Word-boundary top-rate matching ----------------------------------------
+
+
+def test_top_rate_uses_word_boundary_not_substring():
+    # 'titan' is a Tata-Neu top keyword; 'titanium' must NOT trigger the top rate.
+    r = estimate_reward_value("Tata Neu Infinity", 5000, "titanium supplier")
+    assert r["rate_pct"] == 1.5  # base rate, not the 10% top rate
+    r2 = estimate_reward_value("Tata Neu Infinity", 5000, "Titan watch")
+    assert r2["rate_pct"] == 10.0  # a real Titan spend does earn the top rate
+
+
+# --- Missing value_back is honest, not fabricated 1% ------------------------
+
+
+def test_estimate_reward_value_missing_value_back_is_honest():
+    from data.cards import CARDS, CARD_ALIASES
+
+    CARDS["No VB Card"] = {}
+    CARD_ALIASES["no vb card"] = "No VB Card"
+    try:
+        r = estimate_reward_value("No VB Card", 10000, "shopping")
+        assert r["rate_pct"] == 0.0
+        assert r["approx_value_rupees"] == 0.0
+        assert r["eligible"] is False
+        assert r.get("reward_unknown") is True
+        # In a comparison it must not be ranked as if it earns 1%: it sinks last.
+        res = compare_cards_for_spend("shopping", 10000, top_n=99)
+        row = next(x for x in res["top"] if x["card"] == "No VB Card")
+        assert row["approx_value_rupees"] == 0.0
+        assert row["reward_unknown"] is True
+        assert res["top"][-1]["card"] == "No VB Card"
+    finally:
+        CARDS.pop("No VB Card", None)
+        CARD_ALIASES.pop("no vb card", None)
+
+
+# --- Assumed-forex visibility -----------------------------------------------
+
+
+def test_forex_assumed_flag_when_field_missing():
+    # HDFC omits forex_markup_pct -> the 3.5% default is ASSUMED (flagged).
+    hdfc = estimate_net_cost(
+        "HDFC Regalia Gold", 10000, "shopping", is_international=True
+    )
+    assert hdfc["forex_markup"] == 350.0
+    assert hdfc["forex_assumed"] is True
+    # Uni GoldX declares 0% forex explicitly -> not an assumption.
+    uni = estimate_net_cost("Uni GoldX", 10000, "forex", is_international=True)
+    assert uni["forex_assumed"] is False
+    # Domestic spend -> no forex assumption in play.
+    dom = estimate_net_cost("HDFC Regalia Gold", 10000, "shopping")
+    assert dom["forex_assumed"] is False

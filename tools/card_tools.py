@@ -104,6 +104,27 @@ def _all_matching_card_names(card_name: str) -> list:
     return sorted(found)
 
 
+def resolve_card_or_ambiguity(card_name: str):
+    """Resolve a fuzzy card reference, signalling ambiguity instead of silently
+    picking the first match. Returns (canonical, None) for a unique match;
+    (None, ambiguity_dict) when it matches >1 card; (None, None) when it matches
+    none (caller emits its own 'unknown card' error)."""
+    matches = _all_matching_card_names(card_name)
+    if len(matches) == 1:
+        return matches[0], None
+    if len(matches) > 1:
+        return None, {
+            "ambiguous": True,
+            "query": card_name,
+            "matches": matches,
+            "message": (
+                f"You hold more than one card matching '{card_name}'. "
+                "Which did you mean: " + ", ".join(matches) + "?"
+            ),
+        }
+    return None, None
+
+
 def find_matching_cards(card_name: str) -> dict:
     """List every portfolio card a loosely-named reference could mean.
 
@@ -148,8 +169,8 @@ def find_cards_for_category(merchant_or_category: str, amount: float = 0.0) -> d
         matches, ``matches`` is empty and the note suggests the catch-all card.
     """
     text = (merchant_or_category or "").lower()
-    matches = []
-    for rule in DECISION_MATRIX:
+    candidates = []
+    for idx, rule in enumerate(DECISION_MATRIX):
         # Amount band filter.
         if amount:
             if amount < rule.get("min_amount", 0):
@@ -160,21 +181,34 @@ def find_cards_for_category(merchant_or_category: str, amount: float = 0.0) -> d
         hits = [kw for kw in rule["keywords"] if _keyword_in_text(kw, text)]
         if not hits:
             continue
-        score = sum(len(kw) for kw in hits)
-        matches.append(
-            (
-                score,
-                {
+        candidates.append(
+            {
+                "idx": idx,
+                "rule": rule,
+                "kw_score": sum(len(kw) for kw in hits),
+                "entry": {
                     "category": rule["category"],
                     "primary": rule["primary"],
                     "strategy": rule["strategy"],
                     "fallback": rule.get("fallback"),
                 },
-            )
+            }
         )
 
-    matches.sort(key=lambda m: m[0], reverse=True)
-    ranked = [m[1] for m in matches]
+    # Rank by reward VALUE (not keyword length) so, e.g., "MacBook at Croma" routes
+    # to the 10% Tata brand rule over the 2% large-misc rule — and so this pick
+    # agrees with compare_cards_for_spend's value ranking. When the amount is
+    # unknown we can't value-rank, so we fall back to keyword score + config order.
+    if amount:
+        for c in candidates:
+            ev = estimate_reward_value(
+                c["rule"]["primary"], amount, merchant_or_category
+            )
+            c["value"] = ev.get("approx_value_rupees", 0.0)
+        candidates.sort(key=lambda c: (-c["value"], -c["kw_score"], c["idx"]))
+    else:
+        candidates.sort(key=lambda c: (-c["kw_score"], c["idx"]))
+    ranked = [c["entry"] for c in candidates]
 
     note = ""
     if not ranked:
@@ -182,6 +216,23 @@ def find_cards_for_category(merchant_or_category: str, amount: float = 0.0) -> d
             "No specific category matched. For large miscellaneous spends, "
             "consider 'Amex Platinum Travel' (milestone strategy)."
         )
+    elif not amount:
+        banded = [
+            c
+            for c in candidates
+            if c["rule"].get("min_amount") or c["rule"].get("max_amount") is not None
+        ]
+        if len(banded) > 1:
+            note = (
+                "Amount unknown and this category has amount-dependent tiers "
+                "(e.g. UPI) — the best card depends on the amount; ask the user. "
+                "Ranked by keyword match only."
+            )
+        else:
+            note = (
+                "Amount unknown — ranked by keyword match only; this pick is "
+                "amount-independent."
+            )
     return {
         "query": merchant_or_category,
         "amount": amount,
@@ -200,7 +251,9 @@ def get_card_details(card_name: str) -> dict:
         The card's reference dict plus its canonical ``name``, or an ``error``
         if the card is unknown.
     """
-    canonical = _resolve_card_name(card_name)
+    canonical, _amb = resolve_card_or_ambiguity(card_name)
+    if _amb:
+        return _amb
     if not canonical:
         return {
             "error": f"Unknown card: {card_name}",
@@ -237,7 +290,9 @@ def estimate_reward_value(card_name: str, amount: float, category: str = "") -> 
         dict with ``card``, ``amount``, ``rate_pct``, ``approx_value_rupees``,
         ``eligible`` and a ``basis`` explanation, or an ``error`` for unknown cards.
     """
-    canonical = _resolve_card_name(card_name)
+    canonical, _amb = resolve_card_or_ambiguity(card_name)
+    if _amb:
+        return _amb
     if not canonical:
         return {"error": f"Unknown card: {card_name}"}
 
@@ -272,11 +327,27 @@ def estimate_reward_value(card_name: str, amount: float, category: str = "") -> 
     #   {top_rate, top_keywords, base_rate}
     # — the category top rate applies when the category matches a top keyword,
     # otherwise the base rate. Fully config-driven; no card names hardcoded here.
-    vb = card.get("value_back", {})
+    # A card with NO value_back block has an UNKNOWN reward rate — be honest about
+    # it (rate 0, flagged) rather than fabricating a 1% rate.
+    vb = card.get("value_back")
+    if not vb:
+        return {
+            "card": canonical,
+            "amount": amount,
+            "rate_pct": 0.0,
+            "approx_value_rupees": 0.0,
+            "eligible": False,
+            "reward_unknown": True,
+            "basis": "no value_back configured — reward rate unknown.",
+        }
     top = vb.get("top_rate", 1.0)
     top_kw = vb.get("top_keywords", [])
     base = vb.get("base_rate", top)
-    matched_top = any(kw.lower() in cat for kw in top_kw) if top_kw else (top == base)
+    matched_top = (
+        any(_keyword_in_text(kw.lower(), cat) for kw in top_kw)
+        if top_kw
+        else (top == base)
+    )
     rate = top if matched_top else base
     value = round(amount * rate / 100.0, 2)
     return {
@@ -290,11 +361,52 @@ def estimate_reward_value(card_name: str, amount: float, category: str = "") -> 
     }
 
 
+def _apply_cap_to_reward(card_name: str, amount: float, ev: dict, tool_context):
+    """Adjust an eligibility-aware reward estimate ``ev`` for a card's combined-
+    cashback cap read from session state. Returns ``(rate_pct, value_rupees)``.
+
+    Cards without a ``combined_monthly_cashback`` tracker, spends already at the
+    base rate, or a missing ``tool_context`` are returned unchanged. When the cap
+    is fully exhausted the spend earns the base rate. When it is PARTIALLY used
+    (headroom remains but is smaller than this spend's eligible amount) the spend
+    is valued at a BLENDED rate: the portion within the remaining eligible-spend
+    headroom at the top rate, the remainder at the base rate.
+    """
+    rate = ev["rate_pct"]
+    value = ev["approx_value_rupees"]
+    if tool_context is None or not ev.get("eligible", True):
+        return rate, value
+    base = CARDS[card_name].get("value_back", {}).get("base_rate", rate)
+    tracker = CARDS[card_name].get("tracker") or {}
+    if tracker.get("type") != "combined_monthly_cashback" or rate <= base:
+        return rate, value
+
+    from tools.spend_tracker import check_cap_status  # lazy: avoid import cycle
+
+    cap = check_cap_status(tool_context, card_name)
+    if cap.get("exhausted"):
+        return base, round(amount * base / 100.0, 2)
+
+    tr_rate = tracker.get("rate", 0.0)
+    cap_value = tracker.get("cap_value", 0)
+    # Ceiling of eligible spend that still earns the top rate = cap / rate.
+    ceiling = cap_value / tr_rate if tr_rate else 0.0
+    eligible_spent = cap.get("eligible_spend_this_month", 0.0)
+    headroom = max(ceiling - eligible_spent, 0.0)
+    if headroom >= amount:
+        return rate, value  # whole spend still fits under the cap at the top rate
+
+    blended = round(headroom * rate / 100.0 + (amount - headroom) * base / 100.0, 2)
+    blended_rate = round(blended / amount * 100.0, 2) if amount else rate
+    return blended_rate, blended
+
+
 def estimate_net_cost(
     card_name: str,
     amount: float,
     category: str = "",
     is_international: bool = False,
+    tool_context: Optional[ToolContext] = None,
 ) -> dict:
     """Estimate the TRUE net cost of a transaction on a card: what it really costs
     you after rewards and forex markup.
@@ -316,12 +428,19 @@ def estimate_net_cost(
         dict with ``card``, ``amount``, ``reward_value``, ``forex_markup``,
         ``net_cost``, ``effective_rate_pct`` and ``eligible`` (or ``error``).
     """
-    canonical = _resolve_card_name(card_name)
+    canonical, _amb = resolve_card_or_ambiguity(card_name)
+    if _amb:
+        return _amb
     if not canonical:
         return {"error": f"Unknown card: {card_name}"}
 
     rv = estimate_reward_value(canonical, amount, category)
-    reward = rv["approx_value_rupees"]
+    # Cap-aware reward when session state is provided (optional — existing callers
+    # pass no context and see the un-capped estimate, so the schema is unaffected).
+    _rate, reward = _apply_cap_to_reward(canonical, amount, rv, tool_context)
+    # Forex: a missing forex_markup_pct falls back to the default, but flag that the
+    # assumption was made so it's visible rather than silent.
+    forex_assumed = is_international and "forex_markup_pct" not in CARDS[canonical]
     markup_pct = (
         CARDS[canonical].get("forex_markup_pct", _DEFAULT_FOREX_MARKUP_PCT)
         if is_international
@@ -335,9 +454,11 @@ def estimate_net_cost(
         "amount": amount,
         "reward_value": reward,
         "forex_markup": forex,
+        "forex_assumed": forex_assumed,
         "net_cost": net,
         "effective_rate_pct": eff,
         "eligible": rv.get("eligible", True),
+        "reward_unknown": rv.get("reward_unknown", False),
     }
 
 
@@ -375,19 +496,11 @@ def compare_cards_for_spend(
     ranked = []
     for name in CARDS:
         ev = estimate_reward_value(name, amount, merchant_or_category)
-        rate = ev["rate_pct"]
-        value = ev["approx_value_rupees"]
-        # Cap-aware down-ranking: if this card's combined cashback cap is already
-        # exhausted, its bonus categories now earn only the base rate.
-        if tool_context is not None and ev.get("eligible", True):
-            from tools.spend_tracker import check_cap_status  # lazy: avoid cycle
-
-            cap = check_cap_status(tool_context, name)
-            if cap.get("exhausted"):
-                base = CARDS[name].get("value_back", {}).get("base_rate", rate)
-                if rate > base:
-                    rate = base
-                    value = round(amount * base / 100.0, 2)
+        # Cap-aware valuation: an exhausted combined-cashback cap drops the bonus
+        # category to its base rate; a PARTIALLY-used cap blends top + base rates
+        # across the remaining eligible-spend headroom.
+        rate, value = _apply_cap_to_reward(name, amount, ev, tool_context)
+        forex_assumed = is_international and "forex_markup_pct" not in CARDS[name]
         markup_pct = (
             CARDS[name].get("forex_markup_pct", forex_default)
             if is_international
@@ -401,6 +514,8 @@ def compare_cards_for_spend(
                 "rate_pct": rate,
                 "approx_value_rupees": value,
                 "net_cost": net_cost,
+                "forex_assumed": forex_assumed,
+                "reward_unknown": ev.get("reward_unknown", False),
                 "is_matrix_primary": name == primary,
             }
         )
@@ -410,7 +525,7 @@ def compare_cards_for_spend(
     n = max(1, min(int(top_n) if top_n else 3, len(ranked)))
     top = [{"rank": i, **row} for i, row in enumerate(ranked[:n], 1)]
 
-    logger.info(
+    logger.debug(
         "compare_cards_for_spend: query=%r amount=%s intl=%s -> winner=%s",
         merchant_or_category,
         amount,

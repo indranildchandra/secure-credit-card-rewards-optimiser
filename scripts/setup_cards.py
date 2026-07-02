@@ -94,7 +94,9 @@ _AFFIRM_PHRASES = (
     "go for it",
 )
 # Any of these in the user's message vetoes the affirmation (so "no, that's not
-# correct" or "don't approve" never counts as a yes).
+# correct" or "I cannot approve this" never counts as a yes). Includes contracted
+# and modal-negative refusals: the tokeniser keeps the apostrophe so "can't"
+# stays one token, and the apostrophe-less spellings are listed for safety.
 _NEGATION_WORDS = {
     "no",
     "nope",
@@ -103,6 +105,19 @@ _NEGATION_WORDS = {
     "don't",
     "dont",
     "do n't",
+    "cannot",
+    "can't",
+    "cant",
+    "won't",
+    "wont",
+    "shouldn't",
+    "shouldnt",
+    "wouldn't",
+    "wouldnt",
+    "couldn't",
+    "couldnt",
+    "ain't",
+    "aint",
     "never",
     "cancel",
     "stop",
@@ -111,18 +126,34 @@ _NEGATION_WORDS = {
     "incorrect",
     "wrong",
 }
+# Correction cues: if the user pairs an affirmation with one of these, they are
+# asking for a change ("looks perfect, but change the fee"), not approving the
+# current proposal — so block the auto-affirm.
+_CORRECTION_WORDS = {
+    "change",
+    "but",
+    "except",
+    "instead",
+    "wrong",
+    "fix",
+    "edit",
+    "actually",
+}
 
 
 def _is_affirmative(text: str) -> bool:
     """True only if the text contains an explicit confirmation AND no negation.
 
     Word-boundary safe ('yesterday' is not 'yes'); negation-aware ('no, that's
-    not correct' is NOT a yes even though it contains 'correct'). Biased toward
-    blocking: if a confirmation is ambiguous, return False and let the agent ask
-    again."""
+    not correct' and 'I cannot approve this' are NOT a yes even though they
+    contain an affirm token); correction-aware ('looks perfect but change the
+    fee' is a change request, not approval). Biased toward blocking: if a
+    confirmation is ambiguous, return False and let the agent ask again."""
     t = (text or "").lower()
     words = set(re.findall(r"[a-z']+", t))
     if words & _NEGATION_WORDS:
+        return False
+    if words & _CORRECTION_WORDS:
         return False
     if any(p in t for p in _AFFIRM_PHRASES):
         return True

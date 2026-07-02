@@ -14,6 +14,12 @@ from config import MODEL, IS_GEMINI
 def build_web_search_tool():
     """Return the web-search tool appropriate for the configured provider."""
     if IS_GEMINI:
+        # Privacy invariant #2: the Gemini path sends the query to the built-in
+        # ``google_search`` tool inside a sub-agent, which we can't intercept to
+        # sanitise the outbound query string the way the Ollama/DDG path does
+        # (see ``tools/duckduckgo_search._strip_amounts``). This path therefore
+        # relies on the prompt wording to keep amounts / raw sentences out of
+        # the query. The default provider is Ollama, which IS code-guarded.
         from google.adk.agents import Agent
         from google.adk.tools import google_search
         from google.adk.tools.agent_tool import AgentTool

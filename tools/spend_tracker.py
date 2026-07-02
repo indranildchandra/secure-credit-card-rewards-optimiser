@@ -23,13 +23,15 @@ State shape (under key ``user:spend_log``):
     }
 """
 
+import re
 from datetime import datetime, timezone
+from math import isfinite
 from typing import Optional
 
 from google.adk.tools import ToolContext
 
 from data.cards import CARDS
-from tools.card_tools import _resolve_card_name
+from tools.card_tools import _resolve_card_name, resolve_card_or_ambiguity
 
 # ``user:`` prefix → ADK persists this at the user level, shared across all of
 # the user's sessions (not just the current conversation).
@@ -76,11 +78,40 @@ def _parse_amount(value) -> float:
     if isinstance(value, bool):  # bool is an int subclass — reject it explicitly
         raise ValueError("amount must be a number, not a boolean")
     if isinstance(value, (int, float)):
-        return float(value)
+        f = float(value)
+        if not isfinite(f):  # reject inf / nan — they poison cap/threshold totals
+            raise ValueError("amount must be a finite number")
+        return f
     s = str(value).strip().lower()
     for token in ("₹", "rs.", "rs", "inr", ",", " "):
         s = s.replace(token, "")
-    return float(s)  # may raise ValueError — caller handles it
+    f = float(s)  # may raise ValueError — caller handles it
+    if not isfinite(f):  # e.g. "inf" / "nan" survive cleanup as floats
+        raise ValueError("amount must be a finite number")
+    return f
+
+
+def _parse_fee_amount(fee) -> Optional[float]:
+    """Extract the numeric rupee value from a fee string.
+
+    "Rs.5,000" -> 5000.0; "Rs.2,999 + GST" -> 2999.0; a free/nil fee
+    ("Lifetime Free", "LTF", "Nil") -> 0.0. Returns None when no number can be
+    found (so the caller can fall back to an honest, non-fabricated verdict).
+    """
+    if fee is None:
+        return None
+    s = str(fee).strip().lower()
+    if not s:
+        return None
+    if any(token in s for token in ("lifetime free", "ltf", "nil", "free")):
+        return 0.0
+    match = re.search(r"\d[\d,]*", s)
+    if not match:
+        return None
+    try:
+        return float(match.group(0).replace(",", ""))
+    except ValueError:
+        return None
 
 
 def apply_spend_to_log(
@@ -123,9 +154,20 @@ def record_spend(
     if amt <= 0:
         return f"Amount must be a positive number (got {amt:g}); nothing recorded."
 
+    # Resolve a user-supplied card name through the ambiguity gate BEFORE any
+    # mutation: an ambiguous reference ("my Axis card") must ask which card and
+    # record NOTHING, rather than silently attributing to the wrong one.
+    resolved_card = ""
+    if card:
+        canonical, _amb = resolve_card_or_ambiguity(card)
+        if _amb:
+            return _amb["message"]
+        if canonical:
+            resolved_card = canonical
+
     month = _current_month()
     log = _get_log(tool_context)
-    canonical = apply_spend_to_log(log, month, category, amt, card)
+    canonical = apply_spend_to_log(log, month, category, amt, resolved_card)
     cat = (category or "uncategorised").strip().lower()
 
     # Bound the durable store, then reassign so ADK detects the mutation.
@@ -214,7 +256,9 @@ def check_cap_status(tool_context: ToolContext, card_name: str) -> dict:
         dict describing the cap, amount used, and whether it's exhausted/met,
         or a ``note`` if the card has no ``tracker`` configured.
     """
-    canonical = _resolve_card_name(card_name)
+    canonical, _amb = resolve_card_or_ambiguity(card_name)
+    if _amb:
+        return _amb
     if not canonical:
         return {"error": f"Unknown card: {card_name}"}
 
@@ -332,7 +376,9 @@ def check_fee_waiver_status(tool_context: ToolContext, card_name: str) -> dict:
         dict describing the annual fee, the waiver threshold, year-to-date spend
         on the card, how much more is needed, and whether the fee is waived.
     """
-    canonical = _resolve_card_name(card_name)
+    canonical, _amb = resolve_card_or_ambiguity(card_name)
+    if _amb:
+        return _amb
     if not canonical:
         return {"error": f"Unknown card: {card_name}"}
 
@@ -401,7 +447,9 @@ def assess_card_value(tool_context: ToolContext, card_name: str) -> dict:
         dict with the annual fee, YTD spend on the card, an approximate rewards
         estimate, whether the fee is waived, and a plain-language ``verdict``.
     """
-    canonical = _resolve_card_name(card_name)
+    canonical, _amb = resolve_card_or_ambiguity(card_name)
+    if _amb:
+        return _amb
     if not canonical:
         return {"error": f"Unknown card: {card_name}"}
 
@@ -442,10 +490,34 @@ def assess_card_value(tool_context: ToolContext, card_name: str) -> dict:
 
     fee = fw.get("fee", "")
     threshold = fw.get("annual_spend")
+    fee_value = _parse_fee_amount(fee)
     waived = bool(threshold) and ytd >= threshold
     if waived:
-        verdict = f"Fee {fee} is waived by your spend — effectively free."
+        verdict = (
+            f"Fee {fee} is waived by your spend — effectively free; "
+            f"you've earned ~Rs.{est_rewards:,.0f} in rewards YTD on top."
+        )
+    elif fee_value is not None:
+        # Actually compare estimated YTD rewards against the parsed fee number.
+        if est_rewards >= fee_value:
+            verdict = (
+                f"Worth it so far: earned ~Rs.{est_rewards:,.0f} in rewards vs "
+                f"Rs.{fee_value:,.0f} fee YTD."
+            )
+        else:
+            gap = round(fee_value - est_rewards, 2)
+            verdict = (
+                f"Earned ~Rs.{est_rewards:,.0f} in rewards vs Rs.{fee_value:,.0f} "
+                f"fee — Rs.{gap:,.0f} short of covering it"
+            )
+            if threshold:
+                verdict += (
+                    f"; spend Rs.{round(threshold - ytd):,} more to waive the fee."
+                )
+            else:
+                verdict += " — weigh milestones/benefits against the fee."
     elif threshold:
+        # Fee amount unparseable: fall back to an honest, non-fabricated verdict.
         verdict = (
             f"Fee {fee} not yet waived (Rs.{round(threshold - ytd):,} more spend "
             f"needed). Weigh the fee against rewards/benefits if you won't reach it."
