@@ -401,6 +401,33 @@ OLLAMA_API_BASE=http://localhost:11434
 | `gemma4`     | —       | Alias for the current Gemma 4 default tag. |
 | `gemma4:27b` | ~17 GB  | Best quality; needs a large-VRAM GPU. |
 
+### Optional cloud path: Ollama Cloud (for testing without a local GPU)
+
+Want to try the **same Gemma agent** but don't have the RAM/GPU to run the model
+locally? Point it at [**Ollama Cloud**](https://ollama.com), which serves the
+hosted models over the identical Ollama chat API. In `config/model.config`,
+comment out the local `OLLAMA_API_BASE` and uncomment the cloud one:
+
+```ini
+MODEL_PROVIDER=ollama
+MODEL_NAME=gemma4:e2b          # use a tag your Ollama Cloud account serves
+OLLAMA_API_BASE=https://ollama.com
+```
+
+Then `cp .env.example .env` and set your key:
+
+```ini
+OLLAMA_CLOUD_API_KEY=your_ollama_cloud_key_here
+```
+
+The key is sent as an `Authorization: Bearer` header **only** because the host is
+remote — a local `OLLAMA_API_BASE` (`localhost`/`127.0.0.1`) stays
+credential-free, so a stray key can never leak to your local daemon. Under the
+hood this is the ADK/LiteLLM-native equivalent of the raw Ollama client's
+`host=...` + `headers={"Authorization": "Bearer ..."}` — same request on the
+wire. Note this is **not offline** (reasoning leaves your machine), so use it for
+testing rather than daily use.
+
 ### Optional cloud path: Gemini
 
 To run the same agent on **Gemini** instead (see
