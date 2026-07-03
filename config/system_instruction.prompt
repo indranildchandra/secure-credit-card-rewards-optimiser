@@ -69,5 +69,5 @@ The user will say something like: "I am spending Rs.[Amount] at [Merchant/Catego
 
 For top-N or fee-waiver questions, answer clearly and concisely instead of the
 four-field format. Always ground your recommendation in the tool outputs rather
-than guessing. The card data reflects APRIL 2026 — trust the live search for
+than guessing. The card data was refreshed JULY 2026 — trust the live search for
 anything newer.

@@ -16,8 +16,8 @@ exposes three structures used by the deterministic tools:
                         lookup); derived from ``CARDS``.
 
 To add or edit a card or routing rule, edit ``config/cards.config`` only.
-Data reflects the matrix as of APRIL 2026; the optimiser performs a live web
-search at query time to surface any newer offers or devaluations.
+Data was refreshed JULY 2026 against current issuer terms; the optimiser also
+performs a live web search at query time to surface any newer offers/devaluations.
 """
 
 import json

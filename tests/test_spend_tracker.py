@@ -395,3 +395,20 @@ def test_hsbc_cap_counts_grocery_merchant_synonyms():
     status = check_cap_status(ctx, "HSBC Live+")
     assert status["eligible_spend_this_month"] == 12000.0
     assert status["exhausted"] is True
+
+
+def test_axis_rewards_fee_waiver_threshold_is_two_lakh():
+    # Research: Axis Rewards fee waiver dropped Rs.3L -> Rs.2L.
+    ctx = FakeToolContext()
+    record_spend(ctx, "shopping", 200000, "Axis Rewards")
+    status = check_fee_waiver_status(ctx, "Axis Rewards")
+    assert status["waived"] is True
+
+
+def test_axis_rewards_accelerated_cap_tracked():
+    # Research: apparel/departmental accelerated earn is capped ~1,008 RP/month
+    # (~Rs.6,300 eligible spend). Modelled as a combined_monthly_cashback cap.
+    ctx = FakeToolContext()
+    record_spend(ctx, "apparel", 7000, "Axis Rewards")  # 7000*3.2% = 224 > ~202 cap
+    status = check_cap_status(ctx, "Axis Rewards")
+    assert status["exhausted"] is True

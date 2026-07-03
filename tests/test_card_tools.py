@@ -100,8 +100,8 @@ def test_estimate_reward_value_amazon():
 
 
 def test_estimate_reward_value_base_rate():
-    # Amazon card on a non-Amazon spend falls to its base rate (1%).
-    r = estimate_reward_value("ICICI AmazonPay", 10000, "fuel")
+    # Amazon card on a non-Amazon, non-excluded spend falls to its base rate (1%).
+    r = estimate_reward_value("ICICI AmazonPay", 10000, "clothing")
     assert r["rate_pct"] == 1.0
 
 
@@ -425,3 +425,29 @@ def test_hotel_smartbuy_still_routes_to_hdfc():
 def test_iphone_now_routes_to_electronics():
     # "iphone" keyword added -> a flagship phone is no longer unrouted.
     assert _primary("buying an iphone", 80000) == "Amex Platinum Travel"
+
+
+# --- Config accuracy corrections (mid-2026 research pass) -------------------
+
+
+def test_axis_rupay_effective_rate_is_point_two_pct():
+    # Research: 2 EDGE RP/Rs.200 x Rs.0.20/RP = 0.2%, not the old 1.0%.
+    r = estimate_reward_value("Axis RuPay", 3000, "upi")
+    assert r["rate_pct"] == 0.2
+    assert r["eligible"] is True
+    assert r["approx_value_rupees"] == 6.0  # 3000 * 0.2%
+
+
+def test_icici_excluded_categories_earn_nothing():
+    # Oct 2025 devaluation: rent/fuel/EMI/gold/education/tax no longer earn.
+    for cat in ("rent", "fuel", "education", "gold", "emi"):
+        r = estimate_reward_value("ICICI AmazonPay", 5000, cat)
+        assert r["rate_pct"] == 0.0 and r["eligible"] is False, cat
+    # Amazon still earns the full 5%.
+    assert estimate_reward_value("ICICI AmazonPay", 5000, "amazon")["rate_pct"] == 5.0
+
+
+def test_scapia_insurance_now_excluded():
+    # 27 Feb 2026 devaluation added Insurance to the no-reward list.
+    r = estimate_reward_value("Scapia Visa", 5000, "insurance")
+    assert r["rate_pct"] == 0.0 and r["eligible"] is False
