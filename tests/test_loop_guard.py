@@ -148,6 +148,27 @@ def test_identical_repeat_strips_tools():
     assert "stop" in _last_text(req).lower()
 
 
+def test_web_search_result_caps_at_one_and_forces():
+    # ddg_search loop: the model re-searches with a varied query (evading the
+    # identical-call check). One search is enough -> force the answer after it.
+    req = _request(
+        [
+            _call(
+                "find_cards_for_category", merchant_or_category="Croma", amount=200000
+            ),
+            _result(
+                "find_cards_for_category",
+                {"matches": [{"primary": "Tata Neu Infinity"}]},
+            ),
+            _call("ddg_search", query="MacBook Croma offer 2026"),
+            _result("ddg_search", {"text": "some offers"}),
+        ]
+    )
+    ground_and_break_tool_loops(None, req)
+    assert req.config.tools == []  # search done -> tools stripped, must answer now
+    assert "stop" in _last_text(req).lower()
+
+
 def test_runaway_backstop_strips_tools():
     contents = []
     for i in range(6):  # 6 distinct calls -> hits _MAX_TOOL_CALLS_PER_TURN

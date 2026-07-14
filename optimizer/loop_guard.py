@@ -33,10 +33,14 @@ _ANSWER_TOKEN_BUDGET = 2048
 # Same tool + same args this many times in a turn == a loop → force a text answer.
 _IDENTICAL_CALL_THRESHOLD = 2
 # Runaway backstop: force an answer after this many total tool calls in a turn.
-_MAX_TOOL_CALLS_PER_TURN = 6
+_MAX_TOOL_CALLS_PER_TURN = 5
 # Tools whose result means "we now have the recommendation / disambiguation", so
 # it's time to ground the model toward answering (other tools may precede these).
 _ROUTING_TOOLS = ("find_cards_for_category", "find_matching_cards")
+# Web-search tools. A single search is always enough — the model must never loop
+# on it (it tends to re-search with a slightly different query, evading the
+# identical-call check and hammering the network). Once one has returned, finalise.
+_SEARCH_TOOLS = ("ddg_search", "web_search")
 
 
 def _recent_tool_results(contents, limit: int = 4) -> list:
@@ -145,7 +149,13 @@ def ground_and_break_tool_loops(callback_context, llm_request):
     counts = _identical_call_counts(contents)
     total = sum(counts.values())
     repeated = max(counts.values()) if counts else 0
-    force = repeated >= _IDENTICAL_CALL_THRESHOLD or total >= _MAX_TOOL_CALLS_PER_TURN
+    # A single web search is always enough — cap it so the model can't loop on it.
+    search_done = any(name in _SEARCH_TOOLS for name, _ in results)
+    force = (
+        repeated >= _IDENTICAL_CALL_THRESHOLD
+        or search_done
+        or total >= _MAX_TOOL_CALLS_PER_TURN
+    )
     routing_done = any(name in _ROUTING_TOOLS for name, _ in results)
 
     # Still gathering (no routing yet, not a loop) — let the model call its next
