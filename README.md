@@ -244,16 +244,29 @@ too, but 3.12 is the target.)
 git clone https://github.com/indranildchandra/secure-credit-card-rewards-optimiser.git
 cd secure-credit-card-rewards-optimiser
 
-# 1. Install — creates .adk_env, installs deps, pulls the Gemma model
+# 1. Install — creates the .adk_env virtualenv, installs deps, pulls the model
 ./setup_venv.sh
 
-# 2. Add your cards — chat to the agent; it researches each card and writes the
+# 2. Activate the virtualenv (REQUIRED for any raw python/pytest/ruff command)
+source .adk_env/bin/activate
+
+# 3. Add your cards — chat to the agent; it researches each card and writes the
 #    config for you (skip if you'd rather hand-edit config/cards.config)
 ./scripts/setup_cards.sh
 
-# 3. Run — boots Ollama + the ADK Web UI
+# 4. Run — boots Ollama + the ADK Web UI
 ./run.sh
 ```
+
+> **⚠️ Activate the venv first.** The `./*.sh` scripts activate it for you, but
+> any command you run **yourself** — `python -m pytest tests/ -q`, `ruff check .`,
+> `python evals/run_evals.py` — needs the virtualenv active, or `python` resolves
+> to your **system** Python and you'll see `No module named pytest`:
+>
+> ```bash
+> source .adk_env/bin/activate      # do this once per shell
+> python -m pytest tests/ -q
+> ```
 
 Open <http://localhost:8080>, select the **`optimizer`** agent, and ask away.
 `./run.sh --clean` wipes the local session DB (resets tracked spends/caps).
@@ -390,6 +403,7 @@ written locally into the same spend log the optimiser reads (no mailbox access,
 nothing leaves your machine):
 
 ```bash
+source .adk_env/bin/activate                                   # if not already active
 python scripts/import_spends.py --csv statement.csv          # imports
 python scripts/import_spends.py --csv statement.csv --dry-run  # preview only
 ```
