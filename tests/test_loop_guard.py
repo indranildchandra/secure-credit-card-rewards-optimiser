@@ -19,11 +19,15 @@ def _call(name, **args):
     )
 
 
-def _result(name):
+def _result(name, response=None):
     return types.Content(
         role="user",
         parts=[
-            types.Part(function_response=types.FunctionResponse(name=name, response={}))
+            types.Part(
+                function_response=types.FunctionResponse(
+                    name=name, response=response or {}
+                )
+            )
         ],
     )
 
@@ -60,7 +64,7 @@ def test_single_tool_call_is_left_alone():
     )
     assert break_tool_call_loops(None, req) is None
     assert req.config.tools and len(req.config.tools) == 1  # tools still offered
-    assert "do not repeat a tool call" not in _last_text(req).lower()
+    assert "do not call any more tools" not in _last_text(req).lower()
 
 
 def test_two_distinct_tools_is_left_alone():
@@ -107,7 +111,30 @@ def test_identical_repeat_breaks_the_loop():
     )
     assert break_tool_call_loops(None, req) is None
     assert req.config.tools == []  # tools stripped -> model must answer as text
-    assert "do not repeat a tool call" in _last_text(req).lower()
+    assert "do not call any more tools" in _last_text(req).lower()
+
+
+def test_finalize_note_inlines_the_real_tool_result():
+    # The fix for "the tool outputs are not visible to me": the loop-break note
+    # must re-state the actual result as plain text so a weak model can use it.
+    req = _request(
+        [
+            _call(
+                "find_cards_for_category", merchant_or_category="Amazon", amount=4000
+            ),
+            _result(
+                "find_cards_for_category",
+                {"matches": [{"primary": "ICICI AmazonPay"}]},
+            ),
+            _call(
+                "find_cards_for_category", merchant_or_category="Amazon", amount=4000
+            ),
+        ]
+    )
+    assert break_tool_call_loops(None, req) is None
+    text = _last_text(req)
+    assert "ICICI AmazonPay" in text  # real result surfaced as readable text
+    assert "do not call any more tools" in text.lower()
 
 
 def test_total_budget_backstop_breaks_runaway():
