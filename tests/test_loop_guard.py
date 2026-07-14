@@ -67,6 +67,40 @@ def test_no_tool_result_yet_is_a_noop():
     assert len(req.config.tools) == 1  # tools still offered for the first call
 
 
+def test_spend_manager_alone_does_not_force():
+    # Compound query: the model records a spend first (spend_manager) and must be
+    # allowed to THEN call find_cards_for_category. A spend result alone must NOT
+    # trigger a forced answer (that was the Swiggy-compound regression).
+    req = _request(
+        [
+            _call("spend_manager", request="record Rs.9000 dining on HSBC Live+"),
+            _result("spend_manager", {"result": "recorded"}),
+        ]
+    )
+    assert ground_and_break_tool_loops(None, req) is None
+    assert len(req.config.tools) == 1  # tools still offered -> can now route
+    assert _last_text(req) == ""  # no grounding note appended yet
+
+
+def test_compound_forces_after_routing_step():
+    # spend_manager THEN find_cards -> now we have the recommendation -> finalise.
+    req = _request(
+        [
+            _call("spend_manager", request="record Rs.9000 dining on HSBC Live+"),
+            _result("spend_manager", {"result": "recorded"}),
+            _call("find_cards_for_category", merchant_or_category="Swiggy", amount=800),
+            _result(
+                "find_cards_for_category",
+                {"matches": [{"primary": "HSBC Live+", "fallback": "Axis Rewards"}]},
+            ),
+        ]
+    )
+    assert ground_and_break_tool_loops(None, req) is None
+    assert req.config.tools == []  # now finalised
+    text = _last_text(req)
+    assert "THE WINNER IS" in text and "HSBC Live+" in text
+
+
 def test_after_routing_forces_answer_with_the_winner():
     # The Croma case: find_cards returned Tata Neu Infinity. The guard must strip
     # tools (no web-search/extra turn to spiral into) and hand the winner over.

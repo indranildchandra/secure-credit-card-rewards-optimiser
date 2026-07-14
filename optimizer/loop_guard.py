@@ -7,18 +7,21 @@ that; asking it to (web-search, re-reason across more turns) is exactly what
 makes it spiral, loop, hallucinate, or truncate mid-thought without ever emitting
 the answer.
 
-So this ``before_model_callback`` collapses the flow to **one tool call, then the
-answer**. The instant ANY tool has returned, it:
+So this ``before_model_callback`` lets a query PROGRESS through the tools it
+genuinely needs — e.g. a compound "record my spend, then which card?" runs
+``spend_manager`` and *then* ``find_cards_for_category`` — and only forces the
+final answer once a routing/disambiguation tool has actually answered (or a
+per-turn budget is hit). At that point it:
 
   1. strips the tools so the next generation cannot start another tool/reason
-     turn — it MUST produce text;
+     turn (e.g. the web-search spiral) — it MUST produce text;
   2. re-states the tool outputs as plain text (weak models ignore the structured
      ``function_response``) and, when routing produced a primary card, hands that
      card to the model directly ("The Winner is X");
   3. raises the output-token budget so the four-field answer isn't truncated.
 
 Deterministic, no extra LLM call. A capable model is unaffected — it would have
-answered after one call anyway; this just guarantees a weak one does too.
+answered after the routing call anyway; this just guarantees a weak one does too.
 
 Trade-off (intentional, for reliability): the always-on web-search "Live Update"
 step is skipped — the answer relies on the local config, and the Live Update
@@ -31,6 +34,15 @@ from google.genai import types
 
 # Generous output budget so the answer never truncates mid-generation.
 _ANSWER_TOKEN_BUDGET = 2048
+
+# Tools whose result means "we now have the recommendation / disambiguation" —
+# i.e. it is time to stop and answer. Everything else (e.g. spend_manager to
+# record a spend) may legitimately precede routing in a compound query.
+_ROUTING_TOOLS = ("find_cards_for_category", "find_matching_cards")
+
+# Backstop: force an answer after this many tool results even without a routing
+# tool, so a non-routing loop can't run forever.
+_MAX_TOOL_CALLS_PER_TURN = 4
 
 
 def _recent_tool_results(contents, limit: int = 4) -> list:
@@ -85,16 +97,25 @@ def _grounding_note(results) -> str:
 
 
 def ground_and_break_tool_loops(callback_context, llm_request):
-    """ADK before_model_callback: after the first tool result, force the answer.
+    """ADK before_model_callback: let compound queries progress, then finalise.
 
-    Mutates ``llm_request`` in place and returns None (proceed). No-op until a
-    tool has run; after that it strips the tools, grounds the model in the real
-    result (with the winner spelled out), and guarantees room for the answer.
+    Mutates ``llm_request`` in place and returns None (proceed). No-op while the
+    model is still legitimately gathering (e.g. it recorded a spend but hasn't
+    routed yet). Once a routing/disambiguation tool has answered — or the per-turn
+    budget is hit — it strips the tools, grounds the model in the real result
+    (with the winner spelled out), and guarantees room for the answer.
     """
     contents = getattr(llm_request, "contents", None)
-    results = _recent_tool_results(contents)
+    results = _recent_tool_results(contents, limit=64)
     if not results:
-        return None  # no tool output yet — let the model make its one tool call
+        return None  # no tool output yet — let the model make its first tool call
+
+    # Let a compound query keep gathering until a routing/disambiguation tool has
+    # answered (or we hit the backstop). This is what lets "record my spend, then
+    # which card?" call spend_manager AND then find_cards_for_category.
+    routing_done = any(name in _ROUTING_TOOLS for name, _ in results)
+    if not routing_done and len(results) < _MAX_TOOL_CALLS_PER_TURN:
+        return None  # still gathering (not a loop) — keep the tools available
 
     config = getattr(llm_request, "config", None)
     if config is not None:
@@ -106,6 +127,8 @@ def ground_and_break_tool_loops(callback_context, llm_request):
         if not getattr(config, "max_output_tokens", None):
             config.max_output_tokens = _ANSWER_TOKEN_BUDGET
 
-    note = types.Content(role="user", parts=[types.Part(text=_grounding_note(results))])
+    note = types.Content(
+        role="user", parts=[types.Part(text=_grounding_note(results[-4:]))]
+    )
     llm_request.contents = list(contents or []) + [note]
     return None
