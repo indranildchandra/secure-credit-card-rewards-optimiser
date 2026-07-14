@@ -17,6 +17,21 @@ done
 
 echo " Starting Credit Card Optimiser (ADK Web UI)..."
 
+# Activate the project virtualenv (created by setup_venv.sh) so `adk` and the
+# dependencies are on PATH — otherwise a fresh terminal uses the system Python
+# and `adk` isn't found. No-op if you've already activated it.
+_HERE="$(cd "$(dirname "$0")" && pwd)"
+if [ -z "${VIRTUAL_ENV:-}" ] && [ -f "$_HERE/.adk_env/bin/activate" ]; then
+    # shellcheck disable=SC1091
+    source "$_HERE/.adk_env/bin/activate"
+    echo " Activated .adk_env"
+fi
+if ! command -v adk > /dev/null 2>&1; then
+    echo "ERROR: 'adk' not found. Run ./setup_venv.sh first, then ./run.sh."
+    echo "  (or activate the venv manually: source .adk_env/bin/activate)"
+    exit 1
+fi
+
 # Cleanup trap — only kills the Ollama process THIS script started.
 cleanup() {
     if [ -n "${OLLAMA_PID:-}" ]; then
