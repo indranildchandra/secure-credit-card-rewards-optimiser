@@ -3,6 +3,10 @@
 # Launch the Credit Card Optimiser in the ADK Web UI with persistent sessions.
 # Boots a local Ollama server (if configured) and starts `adk web .` on :8080.
 
+# Catch unset variables and pipeline failures (not -e: some checks expect a
+# non-zero exit and handle it inline).
+set -uo pipefail
+
 # Parse flags
 CLEAN=0
 for arg in "$@"; do
@@ -12,6 +16,33 @@ for arg in "$@"; do
 done
 
 echo " Starting Credit Card Optimiser (ADK Web UI)..."
+
+# Always run inside the project virtualenv (created by setup_venv.sh) so `adk`
+# and its deps (incl. litellm) resolve there — NOT the system Python. Running a
+# system-installed `adk` fails with "LiteLLM support requires: pip install
+# google-adk[extensions]" because litellm lives only in .adk_env. We activate
+# unconditionally (even if another venv is active) so .adk_env wins on PATH.
+_HERE="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$_HERE/.adk_env/bin/activate" ]; then
+    # shellcheck disable=SC1091
+    source "$_HERE/.adk_env/bin/activate"
+    echo " Using virtualenv: $_HERE/.adk_env"
+fi
+if ! command -v adk > /dev/null 2>&1; then
+    echo "ERROR: 'adk' not found. Run ./setup_venv.sh first, then ./run.sh."
+    exit 1
+fi
+# Guard: make sure the resolved `adk` really is the venv one (not a system adk
+# without litellm). This is the exact failure mode that crashes agent loading.
+_ADK_PATH="$(command -v adk)"
+case "$_ADK_PATH" in
+    "$_HERE/.adk_env/"*) : ;;  # good — venv adk
+    *)
+        echo "WARNING: 'adk' resolves to '$_ADK_PATH' (outside .adk_env)."
+        echo "  If it crashes with 'LiteLLM support requires google-adk[extensions]',"
+        echo "  run:  source .adk_env/bin/activate  then  ./run.sh"
+        ;;
+esac
 
 # Cleanup trap — only kills the Ollama process THIS script started.
 cleanup() {
@@ -32,7 +63,7 @@ else
 fi
 
 # Check ADC when using Vertex AI mode.
-if [ "${GOOGLE_GENAI_USE_VERTEXAI}" = "TRUE" ]; then
+if [ "${GOOGLE_GENAI_USE_VERTEXAI:-}" = "TRUE" ]; then
     if ! gcloud auth application-default print-access-token > /dev/null 2>&1; then
         echo "ERROR: Vertex AI mode requires Application Default Credentials."
         echo "Run: gcloud auth application-default login"
@@ -63,7 +94,7 @@ if [ -f "$MODEL_CONFIG" ]; then
         fi
 
         # Pull the model if it isn't available locally.
-        if ! ollama list 2>/dev/null | grep -q "$_model_name"; then
+        if ! ollama list 2>/dev/null | grep -qF "$_model_name"; then
             echo " Model '$_model_name' not found locally — pulling now (this may take a few minutes)..."
             ollama pull "$_model_name"
             echo " Model '$_model_name' ready"

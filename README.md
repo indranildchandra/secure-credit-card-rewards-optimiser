@@ -8,14 +8,21 @@ minimises your net spend — answered entirely on your own machine.**
 A privacy-first rewards strategist for **your** card portfolio, powered by a
 local **Gemma** model via **Ollama**. No cloud LLM. No mailbox access. No paywall.
 
-[![Python](https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![CI](https://github.com/indranildchandra/secure-credit-card-rewards-optimiser/actions/workflows/ci.yml/badge.svg)](https://github.com/indranildchandra/secure-credit-card-rewards-optimiser/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-~87%25-brightgreen)](#testing)
+[![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Model: Gemma](https://img.shields.io/badge/model-Gemma%204-4285F4?logo=google&logoColor=white)](https://ai.google.dev/gemma)
 [![Runs on: Ollama](https://img.shields.io/badge/runtime-Ollama-000000)](https://ollama.com)
-[![Built with: Google ADK](https://img.shields.io/badge/built%20with-Google%20ADK-34A853)](https://google.github.io/adk-docs/)
+[![Built with: Google ADK](https://img.shields.io/badge/built%20with-Google%20ADK%201.33-34A853)](https://google.github.io/adk-docs/)
 [![Privacy](https://img.shields.io/badge/privacy-100%25%20local-success)](#security-model)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 </div>
+
+> **Quickstart (TL;DR):** Python 3.12 + [Ollama](https://ollama.com) →
+> `./setup_venv.sh` → `source .adk_env/bin/activate` → `./run.sh` → open
+> <http://localhost:8080>. Bring your own cards in
+> [`config/cards.config`](config/cards.config). [Full setup ↓](#quickstart)
 
 ---
 
@@ -26,15 +33,28 @@ mailbox access. This tool does exactly one thing — **given a transaction, name
 best card** — and does it offline, so your spending data never leaves your laptop.
 
 <div align="center">
-  <img src="demo/demo.jpeg" alt="Sample optimiser output: which card to use for a MacBook Pro purchase — winner, runner-up, a comparison table, and a recommendation" width="600">
+  <!--
+    LIVE-DEMO GIF: record a short screen capture of one query in the ADK Web UI
+    (e.g. via QuickTime → export as demo/demo.gif, or `gifski`), drop the file at
+    demo/demo.gif, then DELETE the <img> for the jpeg below and UNCOMMENT this one:
+  <img src="demo/demo.gif" alt="Animated demo: asking the optimiser which card to use and getting a Winner / Reward / Logic / Live Update answer, fully offline" width="640">
   <br>
-  <em>Sample run: the optimiser working through a "which card for a MacBook Pro?" decision.</em>
+  <em>Live run: a "which card?" question answered locally in seconds.</em>
+  -->
+  <img src="demo/demo-1.jpeg" alt="Sample output: which card to use for a MacBook Pro purchase — winner, runner-up, a comparison table, and a recommendation" width="600">
+  <br>
+  <em>Sample run: a "which card for a MacBook Pro?" decision.</em>
+  <br><br>
+  <img src="demo/demo-2.png" alt="Sample output: which card for a Star Health insurance renewal — Winner: Tata Neu Infinity, with reward, logic and a live-update note" width="600">
+  <br>
+  <em>Sample run: a health-insurance renewal, answered in the same Winner / Reward / Logic / Live Update format (shown via the companion <a href="gems/gemini-gem-instruction.md">Gemini Gem</a>).</em>
 </div>
 
 ## Table of contents
 
 - [Why this exists](#why-this-exists)
 - [Highlights](#highlights)
+- [The complete user journey](#the-complete-user-journey)
 - [How it works](#how-it-works)
 - [Built on Google's AI stack](#built-on-googles-ai-stack)
 - [Security model](#security-model)
@@ -98,58 +118,113 @@ Key properties:
 - **Config-driven, bring-your-own-cards** — describe your portfolio once in
   [`config/cards.config`](config/cards.config). Reward rates, category caps, UPI
   bands and routing rules are all data, not code.
-- **Natural-language onboarding** — `./scripts/setup_cards.sh` interviews you,
-  researches each card's current terms on the web, and writes the config for you.
+- **True net-cost** — ranks by _price − reward + forex markup_ (not just % back),
+  and is eligibility-aware: a card that earns nothing for a spend (below a
+  minimum, an excluded category, or a cap that's already exhausted) never wins.
+- **Natural-language onboarding + CSV import** — `./scripts/setup_cards.sh`
+  interviews you and writes the config; `scripts/import_spends.py` loads a
+  statement CSV on-device so cap tracking works without logging each purchase.
 - **Reliable on small models** — routing and arithmetic happen in deterministic
   Python tools, so even a 2B-class local model gives consistent answers.
-- **Cap, milestone & fee-waiver aware** — tracks shared monthly cashback caps,
-  monthly spend thresholds, annual milestones, and annual fee-waiver progress
-  across sessions (local SQLite).
-- **Top-N comparison** — ask for the best few cards for a spend, not just one.
+- **Cap, milestone, fee-waiver & ROI aware** — tracks shared monthly cashback
+  caps, monthly spend thresholds, annual milestones, fee-waiver progress, and
+  "is this card worth its fee?" — persisted per user across sessions (local SQLite).
+- **Top-N comparison & spend recall** — the best few cards for a spend, and
+  "what did I spend on dining last month?".
+- **Lean, router + sub-agents** — a thin root agent delegates the spend/analytics
+  feature to a focused sub-agent, keeping the hot path cheap on tokens.
 - **Live offer check** — a focused web search surfaces the latest offers and
   devaluations, with the query built around _merchant + card names only_.
 - **Zero custom UI** — the interface is the stock **Google ADK Web UI**.
 
+## The complete user journey
+
+There are three phases: **onboard your cards once**, optionally **import past
+spends** so caps and milestones are accurate, then **ask "which card?" anytime**.
+Everything below runs on your machine — the only network hop is an opt-in offer
+search built from merchant + card names.
+
+<div align="center">
+  <img src="demo/user-journey.png" alt="End-to-end user journey: onboard your cards into config/cards.config, optionally import a statement CSV into the local spend log, then ask 'which card?' and get a Winner / Reward / Logic / Live Update answer — all on-device except an opt-in offer search" width="900">
+</div>
+
+<sub>Diagram source (editable Mermaid): [`mermaid/user-journey.mmd`](mermaid/user-journey.mmd)</sub>
+
+### ① Onboard your cards → `config/cards.config`
+
+Run [`./scripts/setup_cards.sh`](scripts/setup_cards.sh) and the **onboarding
+agent** interviews you in plain language. You say _"I have the Tata Neu Infinity
+HDFC card"_; the agent researches its current reward rates, caps and fee-waiver
+terms with a focused web search, shows you what it found, and asks you to confirm.
+Only after you explicitly say _"yes, save it"_ does a code-level gate
+(`require_confirmation_before_write`) allow `save_card` / `add_decision_rule` to
+validate and write the entry — so a poisoned search result can never trigger a
+silent write. The result is your personal knowledge base in
+[`config/cards.config`](config/cards.config): reward rates, category caps, UPI
+bands, routing rules and fee waivers, all as data. Prefer editing by hand? Skip
+the interview and write the JSON directly (see
+[Configure it for your own cards](#configure-it-for-your-own-cards)).
+
+### ② Import past spends → `db/` (optional but recommended)
+
+Cap, milestone and fee-waiver tracking only works if the optimiser knows what
+you've already spent this cycle. Export your card statement as **CSV** (if your
+issuer only gives a PDF, convert it to CSV first) and run
+`python scripts/import_spends.py --csv statement.csv`. It parses the rows
+**entirely on-device**, nets debits against credits/refunds, skips rows whose card
+can't be matched unambiguously, and keeps the most-recent 13 months. Nothing here
+touches the network.
+
+**The CSV is never stored, and neither is any transaction.** The script reads the
+file in place — it never copies or moves it — and immediately **aggregates the rows
+into monthly per-category and per-card totals**. Only those totals are written to
+the local SQLite store under `db/` (the same user-scoped state the agent already
+uses). Individual line items, merchant names and dates are discarded; the durable
+footprint is just buckets like _"2026-06: dining ₹9,000, groceries ₹3,000"_ — the
+minimum needed for cap and milestone math. The statement stays a file you control
+and can delete; the optimiser keeps no copy of it. Use `--dry-run` to preview the
+parsed rows without writing anything, and match `--user`/`--app` to your Web UI
+identity (defaults: `user` / `optimizer`) if imported totals don't appear.
+
+You can skip this step entirely and just let the agent record spends as you confirm
+purchases — importing simply seeds the history so caps are correct from day one.
+
+### ③ Ask a question → Winner / Reward / Logic / Live Update
+
+Run [`./run.sh`](run.sh), open the **ADK Web UI**, and ask in plain language:
+_"Spending Rs.60,000 on a TV at Croma — which card?"_ The **optimizer root agent**
+parses the amount and merchant, then:
+
+- **If you named a specific card ambiguously** ("my Axis card" when you hold
+  several), it **reverse-prompts** — _"Which one, Axis Rewards or Axis RuPay?"_ —
+  before doing anything else.
+- **Routes** the transaction through your decision matrix with deterministic card
+  tools (`find_cards_for_category`, `compare_cards_for_spend`, `estimate_net_cost`),
+  reading `config/cards.config`.
+- **Delegates spending questions** (cap status, "record this", "is this card worth
+  its fee?") to the **`spend_manager` sub-agent**, which reads/writes the `db/`
+  spend log.
+- **Checks live offers only if you ask** — an ordinary "which card?" stays fully
+  offline and fast; a web search fires only when you explicitly ask about current
+  offers or devaluations, and its query carries merchant + card names only, never
+  your amount.
+
+The reply is always the same crisp four fields: **The Winner**, **The Reward**,
+**The Logic**, and **The Live Update**.
+
 ## How it works
 
-The agent orchestrates a set of deterministic tools and formats a four-field
-answer. All card knowledge is read from config; only the offer-check tool touches
-the network.
+A thin **root router** agent handles the hot "which card?" path with deterministic
+card tools, and delegates any spending question to a focused **`spend_manager`
+sub-agent** (see [Agent architecture](AGENTS.md#agent-architecture-one-feature--one-sub-agent))
+so the common path stays lean on tokens. All card knowledge is read from config;
+only the web-search tool touches the network.
 
-```mermaid
-flowchart TD
-    U["You ask:<br/>'Spending Rs.X at a merchant — which card?'"] --> AG["optimizer agent<br/>local Gemma via Ollama"]
+<div align="center">
+  <img src="demo/how-it-works.png" alt="Architecture: the root optimizer agent (local Gemma) routes to deterministic, config-driven card tools, delegates spending questions to the spend_manager sub-agent, and calls an opt-in web search — reading config/cards.config and the local SQLite store, and returning a Winner / Reward / Logic / Live Update answer" width="820">
+</div>
 
-    subgraph Tools["Deterministic tools — no LLM, no network"]
-        R["find_cards_for_category"]
-        CMP["compare_cards_for_spend"]
-        D["get_card_details"]
-        V["estimate_reward_value"]
-        C["check_cap_status"]
-        FW["check_fee_waiver_status"]
-        SP["record_spend /<br/>get_spend_summary"]
-    end
-
-    AG --> R
-    AG --> CMP
-    AG --> D
-    AG --> V
-    AG --> C
-    AG --> FW
-    AG --> SP
-    AG --> WS["ddg_search"]
-
-    R --> CFG["config/cards.config"]
-    CMP --> CFG
-    D --> CFG
-    V --> CFG
-    C --> CFG
-    FW --> CFG
-    SP --> DB["db/ SQLite<br/>session store"]
-    WS --> NET["web:<br/>latest offers / devaluations"]
-
-    AG --> ANS["Answer:<br/>Winner / Reward / Logic / Live Update"]
-```
+<sub>Diagram source (editable Mermaid): [`mermaid/how-it-works.mmd`](mermaid/how-it-works.mmd)</sub>
 
 **Request flow:** parse the transaction → route it through the decision matrix →
 check any relevant cap/threshold → run a focused live-offer search → reply with
@@ -185,10 +260,21 @@ The whole application is an ADK agent:
 
 ### 3. Gemini + Google Search grounding — optional cloud path
 For users who don't need the offline guarantee, the same agent runs on **Gemini**
-(`gemini-2.5-flash`) by switching one config value, and in that mode it uses Google
-Search grounding for the live offer/devaluation check instead of the local
-DuckDuckGo tool. This demonstrates the portability ADK provides across Google's
-local (Gemma) and hosted (Gemini) models.
+(`gemini-2.5-flash`) by switching one config value, and in that mode the live
+offer/devaluation check uses **Google Search grounding** instead of the local
+DuckDuckGo tool — wired as an ADK `AgentTool` sub-agent (ADK's built-in
+`google_search` can't be combined with custom function tools in one agent). This
+demonstrates the portability ADK provides across Google's local (Gemma) and hosted
+(Gemini) models.
+
+> **No-setup alternative — a Gemini Gem.** If you don't need the offline guarantee
+> and just want the recommendations with zero install, this repo grew out of a
+> **Gemini Gem** that does the same job entirely inside your Gemini account. The
+> raw Gem instruction is kept for reference at
+> [`gems/gemini-gem-instruction.md`](gems/gemini-gem-instruction.md) — paste it
+> into a new Gem and go. The local app is the privacy-preserving rebuild of it;
+> the reference file explains how the two differ. _(The insurance-renewal
+> screenshot at the top of this README is this Gem in action.)_
 
 **TL;DR:** a Gemma model (via Ollama) orchestrates a set of deterministic tools,
 exposed and run through Google ADK and its Web UI, with all card knowledge as
@@ -209,25 +295,69 @@ config — delivering cloud-quality rewards advice with on-device privacy.
 
 ## Quickstart
 
-**Prerequisites:** Python 3.9+ and [Ollama](https://ollama.com).
+**Prerequisites:** Python **3.12** and [Ollama](https://ollama.com). Dependencies
+are pinned in [`requirements.txt`](requirements.txt); the developed and tested
+combination is **Python 3.12 + `google-adk==1.33.0`**, with LiteLLM (`1.83.14`)
+bridging ADK to the local Ollama model. (Version markers keep 3.9–3.11 installing
+too, but 3.12 is the target.)
 
 ```bash
 git clone https://github.com/indranildchandra/secure-credit-card-rewards-optimiser.git
 cd secure-credit-card-rewards-optimiser
 
-# 1. Install — creates .adk_env, installs deps, pulls the Gemma model
+# 1. Install — creates the .adk_env virtualenv, installs deps, pulls the model
 ./setup_venv.sh
 
-# 2. Add your cards — chat to the agent; it researches each card and writes the
+# 2. Activate the virtualenv (REQUIRED for any raw python/pytest/ruff command)
+source .adk_env/bin/activate
+
+# 3. Add your cards — chat to the agent; it researches each card and writes the
 #    config for you (skip if you'd rather hand-edit config/cards.config)
 ./scripts/setup_cards.sh
 
-# 3. Run — boots Ollama + the ADK Web UI
+# 4. Run — boots Ollama + the ADK Web UI
 ./run.sh
 ```
 
+> **⚠️ Activate the venv first.** The `./*.sh` scripts activate it for you, but
+> any command you run **yourself** — `python -m pytest tests/ -q`, `ruff check .`,
+> `python evals/run_evals.py` — needs the virtualenv active, or `python` resolves
+> to your **system** Python and you'll see `No module named pytest`:
+>
+> ```bash
+> source .adk_env/bin/activate      # do this once per shell
+> python -m pytest tests/ -q
+> ```
+
 Open <http://localhost:8080>, select the **`optimizer`** agent, and ask away.
 `./run.sh --clean` wipes the local session DB (resets tracked spends/caps).
+
+### Launch the app (ADK Web UI)
+
+`./run.sh` boots everything (it activates the virtualenv, starts Ollama, pulls
+the model if needed, and serves the stock **ADK Web UI**). Then, in the browser:
+
+1. Open **<http://localhost:8080>**.
+2. In the **agent dropdown** (top-left), select **`optimizer`**.
+3. Type a transaction and press enter, e.g.:
+   - `I'm spending Rs.4,000 on Amazon. Which card?` → **ICICI AmazonPay**
+   - `I'm buying a TV at Croma for Rs.60,000. Which card?` → **Tata Neu Infinity**
+   - `Use my Axis card for this.` → it **asks which Axis card** you mean
+4. You get a **Winner / Reward / Logic / Live Update** answer. The left panel
+   shows the **tool calls** the agent made — proof it's calling deterministic
+   tools, not hallucinating.
+5. **Stop** with `Ctrl-C` (it also stops the Ollama process it started).
+
+> The **first** query is slow (cold model load). Run
+> [`./scripts/demo-preflight.sh`](scripts/demo-preflight.sh) beforehand — it
+> verifies Ollama, pulls the model, runs the offline suite, and **pre-warms** the
+> model so your first query is instant.
+
+> **Seeing `LiteLLM support requires: pip install google-adk[extensions]`?** You
+> ran `adk` under your **system** Python instead of the venv (litellm lives only
+> in `.adk_env`). Fix: use `./run.sh` (it now forces the venv), or
+> `source .adk_env/bin/activate` before launching. Tell-tale sign in the logs:
+> paths under `.../Python.framework/...` instead of `.../.adk_env/...`.
 
 > **New here?** Step 2 is the fastest way to get going — see
 > [Onboard your cards by chatting](#onboard-your-cards-by-chatting-natural-language).
@@ -273,6 +403,12 @@ This is a **generic** optimiser — bring your portfolio by editing
 [`config/cards.config`](config/cards.config) (JSON). No Python changes. The
 shipped config is just an example set of cards.
 
+> **Data freshness:** the example `cards.config` was **verified against current
+> issuer terms in July 2026** (rates, caps, fee-waiver thresholds, reward
+> exclusions and recent devaluations). Card terms change often — the live
+> offer-check surfaces anything newer at query time, and you should re-confirm
+> the numbers for your own cards against the issuer's latest T&C.
+
 Each card entry:
 
 ```jsonc
@@ -290,9 +426,18 @@ Each card entry:
     "rate": 0.10,
     "cap_value": 1000,
     "label": "combined monthly cashback"
-  }
+  },
+  "fee_waiver": {"annual_spend": 200000, "fee": "Rs.999"},  // OPTIONAL — ROI/waiver
+  "min_txn": 2000,                        // OPTIONAL — earns nothing below this
+  "no_reward_categories": ["rent", "fuel"], // OPTIONAL — categories that earn 0
+  "forex_markup_pct": 0.0                  // OPTIONAL — international markup (default 3.5)
 }
 ```
+
+Every field except `rewards` is optional; the machine-readable ones (`value_back`,
+`tracker`, `fee_waiver`, `min_txn`, `no_reward_categories`, `forex_markup_pct`)
+drive the deterministic tools. The config is validated at load — a malformed
+entry fails fast with a clear message.
 
 **Routing** lives under `decision_matrix` — ordered rules mapping merchant/
 category `keywords` (with optional `min_amount` / `max_amount` bands) to a
@@ -303,7 +448,7 @@ category `keywords` (with optional `min_amount` / `max_amount` bands) to a
 | `type` | Fields | Tracks |
 |--------|--------|--------|
 | `combined_monthly_cashback` | `categories`, `rate`, `cap_value` | A cashback cap shared across categories within a month. |
-| `monthly_spend_threshold` | `threshold`, `counts_cards` _(optional)_ | A monthly spend target (optionally summing several cards). |
+| `monthly_spend_threshold` | `threshold`, `counts_cards` _(optional)_, `period` _(optional)_ | A monthly spend target (optionally summing several cards). Set `period: "preceding_month"` when the benefit qualifies on last month's spend (e.g. Scapia lounge: Rs.20k last month unlocks this month); defaults to the current month. |
 | `annual_spend_milestone` | `target` | Year-to-date spend toward an annual milestone. |
 
 You can also tune the agent's behaviour in
@@ -334,6 +479,67 @@ The `--once "TEXT"` flag sends a single message and exits (no interactive TTY) �
 handy for scripting or quick checks. If the model can't be reached it fails with
 a clear message and a non-zero exit code.
 
+## Import your statement (CSV, on-device)
+
+Manual logging doesn't scale — import a transactions CSV instead. It's parsed and
+written locally into the same spend log the optimiser reads (no mailbox access,
+nothing leaves your machine):
+
+```bash
+source .adk_env/bin/activate                                   # if not already active
+python scripts/import_spends.py --csv statement.csv          # imports
+python scripts/import_spends.py --csv statement.csv --dry-run  # preview only
+```
+
+The CSV needs an amount column and ideally a merchant/category column; card and
+date columns are used if present. Column names are matched flexibly. (State is
+keyed by `--user`/`--app` to match the ADK Web UI — see the script's `--help`.)
+
+## Agent-level evals
+
+Unit tests cover the deterministic tools; the end-to-end **evals** run the *real*
+agent and grade its actual card choices (prompt → routing → tools → answer).
+Unlike the offline suite, they need a **live model**.
+
+**Run them:**
+
+```bash
+# 1. Prereqs: the model must be pulled and Ollama running.
+ollama serve &                      # if not already running
+ollama pull gemma4:e4b              # the tag in config/model.config
+
+# 2. Activate the venv and run the eval suite.
+source .adk_env/bin/activate
+python evals/run_evals.py
+```
+
+What you'll see — one line per case, then a summary:
+
+```
+[PASS] expect 'ICICI AmazonPay' — I am spending Rs.4,000 on Amazon. Which card?
+[PASS] expect 'Tata Neu Infinity' — I am buying a TV at Croma for Rs.60,000. …
+…
+8/8 passed.
+```
+
+The **exit code is the number of failures** (`0` = all passed), so it can gate a
+release when a model is available. Grading is deterministic (does the expected
+card appear in the answer's *Winner*?). Cases live in
+[`evals/cases.py`](evals/cases.py) — keep them aligned with `config/cards.config`.
+
+A subset also lives under pytest (`tests/test_evals.py`) but is **opt-in** — the
+default `pytest tests/` run **never** executes it (it stays fast and fully
+offline *even on a machine with Ollama running*). To run that subset through
+pytest:
+
+```bash
+RUN_LIVE_EVALS=1 python -m pytest tests/test_evals.py -q   # needs Ollama
+```
+
+That keeps the everyday suite deterministic and CI green, while the ADK wiring is
+still proven without a model by
+[`tests/test_agent_smoke.py`](tests/test_agent_smoke.py), which never skips.
+
 ## Model (Gemma via Ollama)
 
 This project targets Google's **Gemma** family running locally on Ollama. The
@@ -343,16 +549,53 @@ Ollama (earlier Gemma generations do not, so they won't work). Set your tag in
 
 ```ini
 MODEL_PROVIDER=ollama
-MODEL_NAME=gemma4:e2b
+MODEL_NAME=gemma4:e4b
 OLLAMA_API_BASE=http://localhost:11434
 ```
 
 | Model tag | Approx size | Notes |
 |-----------|-------------|-------|
-| `gemma4:e2b` | ~7.2 GB | Efficient; good for 16 GB RAM machines (**default**). |
-| `gemma4:e4b` | ~9.6 GB | Higher quality; needs 16 GB+ RAM. |
+| `gemma4:e2b` | ~7.2 GB | Efficient; good for 16 GB RAM machines. |
+| `gemma4:e4b` | ~9.6 GB | **Default** — stronger, more reliable tool-calling; needs 16 GB+ RAM. |
 | `gemma4`     | —       | Alias for the current Gemma 4 default tag. |
 | `gemma4:27b` | ~17 GB  | Best quality; needs a large-VRAM GPU. |
+
+> **Tool-calling matters here.** The whole app is tool-calls, and a larger tag
+> calls tools more reliably than `e2b`. On 16 GB+ machines prefer `gemma4:e4b`
+> (the default). Before a live run, `./scripts/demo-preflight.sh` checks Ollama,
+> pulls the model, runs the offline suite, and **pre-warms** the model so your
+> first query isn't a slow cold-load.
+
+### Optional cloud path: Ollama Cloud (for testing without a local GPU)
+
+Want to try the **same Gemma agent** but don't have the RAM/GPU to run the model
+locally? Point it at [**Ollama Cloud**](https://ollama.com), which serves the
+hosted models over the identical Ollama chat API. This exists mainly so
+**contributors without a powerful machine can still run and test the project** —
+it's an accessibility on-ramp, not the intended daily-use mode. In
+`config/model.config`, comment out the local `OLLAMA_API_BASE` and uncomment the
+cloud one:
+
+```ini
+MODEL_PROVIDER=ollama
+MODEL_NAME=gemma4:e2b
+OLLAMA_API_BASE=https://ollama.com
+```
+
+Then `cp .env.example .env` and set your key:
+
+```ini
+OLLAMA_CLOUD_API_KEY=your_ollama_cloud_key_here
+```
+
+The key is attached as an `Authorization: Bearer` header **only** when
+`OLLAMA_API_BASE` points at a recognised Ollama Cloud host (`ollama.com`) — an
+allowlist, so a loopback, LAN, or self-hosted daemon stays credential-free and a
+stray key can never leak to it. Under the hood this is the ADK/LiteLLM-native
+equivalent of the raw Ollama client's `host=...` +
+`headers={"Authorization": "Bearer ..."}` — same request on the wire. Because
+inference now leaves the machine, startup prints `⚠ reasoning is going to a
+remote host — not offline`; use this path for testing rather than daily use.
 
 ### Optional cloud path: Gemini
 
@@ -378,18 +621,22 @@ All tools are plain Python functions exposed to the agent via ADK.
 | Method | Signature | What it does |
 |--------|-----------|--------------|
 | `find_cards_for_category` | `(merchant_or_category: str, amount: float = 0.0) -> dict` | Matches merchant/category text (and amount band) against the decision matrix; returns ranked `{primary, strategy, fallback}`. |
+| `find_matching_cards` | `(card_name: str) -> dict` | Disambiguation: lists every card a loosely-named reference could mean, with `ambiguous=True` when an issuer/brand (e.g. "Axis", "HDFC") matches several cards — so the agent reverse-prompts for the exact card instead of guessing. |
 | `compare_cards_for_spend` | `(merchant_or_category: str, amount: float, top_n: int = 3) -> dict` | Ranks the whole portfolio by value for a spend; returns the top N (with the decision-matrix primary flagged). |
 | `get_card_details` | `(card_name: str) -> dict` | Full reference for one card (fuzzy/alias name match). |
 | `list_all_cards` | `() -> list` | Every card with a one-line "when to use". |
-| `estimate_reward_value` | `(card_name: str, amount: float, category: str = "") -> dict` | Approximate ₹/% value-back, read from each card's `value_back` config. |
+| `estimate_reward_value` | `(card_name: str, amount: float, category: str = "") -> dict` | Approximate ₹/% value-back (eligibility-aware: 0 below min-txn / on excluded categories). |
+| `estimate_net_cost` | `(card_name, amount, category="", is_international=False) -> dict` | True net cost = price − reward + forex markup for one transaction. |
 
 ### [`tools/spend_tracker.py`](tools/spend_tracker.py) — session-state caps & thresholds
 | Method | Signature | What it does |
 |--------|-----------|--------------|
 | `record_spend` | `(tool_context, category: str, amount: float, card: str = "") -> str` | Records a spend for the current month (by category and card). |
 | `get_spend_summary` | `(tool_context) -> dict` | This month's totals by category and card. |
+| `get_spend_history` | `(tool_context, months_back: int = 3) -> dict` | Recalls recent months' totals from the persistent user-scoped log ("what did I spend on dining last month?"). |
 | `check_cap_status` | `(tool_context, card_name: str) -> dict` | Remaining headroom for the card's configured `tracker` (cap / threshold / milestone). |
 | `check_fee_waiver_status` | `(tool_context, card_name: str) -> dict` | Year-to-date spend vs the card's annual fee-waiver threshold (or lifetime-free). |
+| `assess_card_value` | `(tool_context, card_name: str) -> dict` | ROI read — is this card worth its annual fee, given your YTD spend on it? |
 
 ### [`tools/duckduckgo_search.py`](tools/duckduckgo_search.py) — live web search
 | Method | Signature | What it does |
@@ -402,6 +649,7 @@ All tools are plain Python functions exposed to the agent via ADK.
 | `list_configured_cards` | `() -> dict` | Names of cards already in `config/cards.config`. |
 | `save_card` | `(card_json: str) -> str` | Validates and writes one card entry into the config (atomic). |
 | `add_decision_rule` | `(rule_json: str) -> str` | Validates and adds/replaces a routing rule in the decision matrix. |
+| `remove_card` | `(card_name: str) -> str` | Removes a card and any routing rules that pointed at it. |
 
 ## Project structure
 
@@ -409,25 +657,31 @@ All tools are plain Python functions exposed to the agent via ADK.
 config/
   model.config               provider/model selection (Gemma via Ollama)
   cards.config               your card knowledge base (Full Reference + Decision Matrix)
-  system_instruction.prompt  the optimiser agent's system prompt
+  system_instruction.prompt  the root optimiser agent's system prompt
   setup_cards_instruction.prompt  the onboarding agent's system prompt
+  spend_instruction.prompt   the spend_manager sub-agent's system prompt
 optimizer/
-  agent.py                   ADK root_agent — orchestrates tools, formats the answer
+  agent.py                   ADK root_agent (thin router) — card tools + sub-agents
+  spend_agent.py             spend/cap/fee-waiver/ROI/recall sub-agent (AgentTool)
+  context_window.py          opt-in sliding-window history compaction for long sessions
 data/
   cards.py                   loads config/cards.config and derives lookup helpers
 tools/
-  card_tools.py              deterministic routing / lookup / reward / compare tools
-  spend_tracker.py           session-state cap, threshold & fee-waiver tracker
+  card_tools.py              routing / lookup / reward / net-cost / compare tools
+  spend_tracker.py           session-state cap, threshold, fee-waiver & ROI tracker
   duckduckgo_search.py       live offers/devaluation web search
-  config_writer.py           validates + writes cards.config (used by onboarding)
+  web_search.py              provider-aware web-search tool factory (Gemini/Ollama)
+  config_writer.py           validates + writes/removes cards in cards.config
+  spend_import.py            CSV parsing + persist for local statement import
 config.py                    reads config/model.config -> MODEL (Ollama/Gemini)
 .env.example                 template for credentials (only needed for the Gemini path)
 run.sh                       boots Ollama + `adk web .` on :8080, persistent sessions
 setup_venv.sh                full first-time setup: runs scripts/setup-env.sh + pulls the model
 scripts/
   setup-env.sh               shared env bootstrap (venv + deps); used by every tool hook
-  setup_cards.py             natural-language card onboarding agent (CLI)
-  setup_cards.sh             shell wrapper that activates the venv and runs the CLI
+  setup_cards.py / .sh       natural-language card onboarding agent (CLI) + wrapper
+  import_spends.py           local CSV/statement import into the spend log
+evals/                       agent-level (end-to-end) eval cases + runner
 db/                          local SQLite session store (created at runtime, git-ignored)
 tests/                       offline pytest suite + manual TEST-CASES.md
 AGENTS.md                    contributor guide for AI coding tools (single source of truth)
@@ -438,18 +692,38 @@ CONTRIBUTING.md             how to contribute
 
 ## Testing
 
-The deterministic core is covered by a fast, fully-offline pytest suite (no LLM,
-no network):
+The deterministic core is covered by a fast, fully-offline pytest suite — no LLM,
+no network, ~5 seconds, and it stays offline **even if Ollama is running** (the
+live-model evals are opt-in; see [below](#agent-level-evals)):
 
 ```bash
 source .adk_env/bin/activate
-python -m pytest tests/ -q
+
+# Everyday — fast, fully offline (~5s). Evals skip even if Ollama is running.
+python -m pytest tests/ -q                                  # 168 passed, 4 skipped
+
+# Run the live-model evals deliberately (needs Ollama + the model pulled):
+RUN_LIVE_EVALS=1 python -m pytest tests/test_evals.py -q    # a subset, via pytest
+python evals/run_evals.py                                   # full set, PASS/FAIL report
 ```
 
-It validates decision-matrix routing, reward estimates, and cap/threshold math —
+> **Two ways to run the evals, one set of cases.** `tests/test_evals.py` runs a
+> subset of [`evals/cases.py`](evals/cases.py) as pytest tests (for CI/opt-in);
+> `evals/run_evals.py` runs the **full** set as a standalone script and prints a
+> report (exit code = number of failures). Both use the same agent + grading —
+> see [Agent-level evals](#agent-level-evals).
+
+It validates decision-matrix routing, reward estimates, cap/threshold math, card
+disambiguation, config validation, spend import, and the privacy sanitiser —
 including a test that registers a brand-new card purely via config data to prove
-the engine is config-driven. End-to-end prompts live in
-[`tests/TEST-CASES.md`](tests/TEST-CASES.md).
+the engine is config-driven. Coverage sits at **~87%** of the engine modules.
+
+One test ([`tests/test_agent_smoke.py`](tests/test_agent_smoke.py)) drives the
+**real agent through ADK's runner with a scripted model** (no Ollama needed, so
+it never skips) — proving the agent → tool-dispatch → real-tool → response wiring
+is intact even in CI. The full LLM-in-the-loop behaviour is graded by the
+end-to-end **evals** (below), which need a live model. End-to-end prompts also
+live in [`tests/TEST-CASES.md`](tests/TEST-CASES.md).
 
 ## Linting & formatting
 
@@ -467,9 +741,13 @@ black .            # format  (black --check . to verify only)
 
 - [x] Multi-card comparison ("show me the top 3 for this spend").
 - [x] Per-card fee-waiver progress tracking.
-- [x] Natural-language import of a card's terms into `cards.config`.
-- [ ] Auto-detect category from a pasted merchant name / receipt line.
-- [ ] Optional export of monthly spend + rewards summary.
+- [x] Natural-language import / removal of cards in `cards.config`.
+- [x] Config validation (fail-fast) and CI (ruff + black + pytest).
+- [x] Eligibility-aware value model (min-txn / excluded-category / cap-exhaustion).
+- [x] True net-cost (price − reward + forex) per card, incl. `is_international`.
+- [x] Local CSV/statement import to populate the spend log (no mailbox access).
+- [x] Portfolio ROI ("is this card worth its fee?") + structured decision logging.
+- [x] Automated agent-level (end-to-end) evals (`evals/`, skipped when no model).
 
 ## Contributing
 

@@ -15,7 +15,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "setup-env: python3 not found; please install Python 3.9+." >&2
+  echo "setup-env: python3 not found; please install Python 3.12." >&2
   exit 1
 fi
 

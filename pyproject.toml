@@ -3,11 +3,11 @@
 
 [tool.black]
 line-length = 88
-target-version = ["py39", "py310", "py311"]
+target-version = ["py312"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py39"
+target-version = "py312"
 exclude = [".adk_env", "db"]
 
 [tool.ruff.lint]

@@ -110,6 +110,33 @@ def save_card(card_json: str) -> str:
     return f"{action} card '{name}' in config/cards.config."
 
 
+def remove_card(card_name: str) -> str:
+    """Remove a card from config/cards.config, plus any decision rules that route
+    to it (so no rule is left pointing at a deleted card).
+
+    Args:
+        card_name: Exact card name to remove (as stored under ``cards``).
+
+    Returns:
+        A confirmation string, or a message if the card was not found.
+    """
+    cfg = _load()
+    cards = cfg.get("cards", {})
+    if card_name not in cards:
+        return (
+            f"No card named '{card_name}' in config/cards.config. "
+            f"Known: {sorted(cards)}"
+        )
+    del cards[card_name]
+    rules = cfg.get("decision_matrix", [])
+    kept = [r for r in rules if r.get("primary") != card_name]
+    dropped = len(rules) - len(kept)
+    cfg["decision_matrix"] = kept
+    _save(cfg)
+    extra = f" and {dropped} routing rule(s)" if dropped else ""
+    return f"Removed card '{card_name}'{extra} from config/cards.config."
+
+
 def add_decision_rule(rule_json: str) -> str:
     """Add a routing rule to the decision matrix in config/cards.config.
 

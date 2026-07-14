@@ -17,23 +17,26 @@ from google.adk.agents import Agent
 from dotenv import load_dotenv
 
 from config import MODEL
-from tools.duckduckgo_search import ddg_search
+from .context_window import trim_history_before_model
+from .answer_cleaner import clean_final_answer
+from .loop_guard import ground_and_break_tool_loops
+from .spend_agent import spend_manager_tool
+from tools.web_search import build_web_search_tool
 from tools.card_tools import (
     find_cards_for_category,
+    find_matching_cards,
     get_card_details,
     list_all_cards,
     estimate_reward_value,
+    estimate_net_cost,
     compare_cards_for_spend,
-)
-from tools.spend_tracker import (
-    record_spend,
-    get_spend_summary,
-    check_cap_status,
-    check_fee_waiver_status,
 )
 
 # Single source of truth: project root .env covers all modules.
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
+# Web-search tool — Google Search grounding on Gemini, DuckDuckGo on Ollama.
+web_search_tool = build_web_search_tool()
 
 # The system instruction lives in a plain-text file under config/ so it can be
 # maintained and evolved without touching Python.
@@ -43,6 +46,17 @@ _PROMPT_PATH = os.path.join(
 with open(_PROMPT_PATH, encoding="utf-8") as _f:
     INSTRUCTION = _f.read()
 
+
+def _before_model(callback_context, llm_request):
+    """Composed before_model_callback: ground the model in tool results and break
+    tool-call loops (a safety net for weak local models), then apply optional
+    history compaction."""
+    result = ground_and_break_tool_loops(callback_context, llm_request)
+    if result is not None:
+        return result
+    return trim_history_before_model(callback_context, llm_request)
+
+
 root_agent = Agent(
     name="optimizer",
     model=MODEL,
@@ -50,16 +64,17 @@ root_agent = Agent(
     instruction=INSTRUCTION,
     tools=[
         find_cards_for_category,
+        find_matching_cards,
         compare_cards_for_spend,
         get_card_details,
         list_all_cards,
         estimate_reward_value,
-        check_cap_status,
-        check_fee_waiver_status,
-        record_spend,
-        get_spend_summary,
-        ddg_search,
+        estimate_net_cost,
+        spend_manager_tool,
+        web_search_tool,
     ],
+    before_model_callback=_before_model,
+    after_model_callback=clean_final_answer,
 )
 
 print(" Credit Card Optimiser agent ready.")

@@ -1,0 +1,41 @@
+flowchart TD
+    subgraph P1["① Onboard your cards — build the knowledge base (once)"]
+        direction TB
+        O1["You run:<br/>./scripts/setup_cards.sh"] --> O2["Onboarding agent (local Gemma)<br/>interviews you: 'Which cards do you hold?'"]
+        O2 --> O3["You describe a card in plain language<br/>e.g. 'I have the Tata Neu Infinity HDFC card'"]
+        O3 --> O4["Agent researches current terms<br/>web search: card name + 'reward rate / caps 2026'"]
+        O4 --> O5{"Confirm before write<br/>(require_confirmation_before_write gate)"}
+        O5 -- "you say 'yes, save it'" --> O6["save_card / add_decision_rule<br/>validates + writes"]
+        O5 -- "not confirmed" --> O3
+        O6 --> CFG[("config/cards.config<br/>reward rates · caps · routing · fee waivers")]
+    end
+
+    subgraph P2["② Import past spends — so caps & milestones are accurate (optional)"]
+        direction TB
+        I1["Export your card statement as CSV<br/>(convert a PDF statement to CSV first if needed)"] --> I2["You run:<br/>python scripts/import_spends.py --csv statement.csv"]
+        I2 --> I3["Parses on-device, nets debits vs credits,<br/>skips ambiguous cards · aggregates to monthly totals<br/>(CSV & line items discarded) · keeps last 13 months"]
+        I3 --> DB[("db/ SQLite<br/>monthly per-card / per-category totals only")]
+    end
+
+    subgraph P3["③ Ask anytime — get the winning card"]
+        direction TB
+        Q1["You run ./run.sh and open the ADK Web UI<br/>'Spending Rs.60,000 on a TV at Croma — which card?'"] --> Q2["optimizer root agent (local Gemma)<br/>parses amount + merchant"]
+        Q2 --> Q3{"Named a specific card?<br/>(e.g. 'my Axis card')"}
+        Q3 -- "ambiguous" --> Q3b["Reverse-prompt:<br/>'Which one — Axis Rewards or Axis RuPay?'"]
+        Q3b --> Q2
+        Q3 -- "no / resolved" --> Q4["Card tools: find_cards_for_category,<br/>compare_cards_for_spend, estimate_net_cost"]
+        Q2 -. "spending / cap / ROI question" .-> Q5["spend_manager sub-agent:<br/>check_cap_status · record_spend · assess_card_value"]
+        Q2 -. "only if you ask about live offers" .-> Q6["web search<br/>(merchant + card names, no amounts)"]
+        Q4 --> ANS["Answer:<br/>Winner · Reward · Logic · Live Update"]
+        Q5 --> ANS
+        Q6 --> ANS
+    end
+
+    CFG -.->|"read on every question"| Q4
+    DB -.->|"read for caps / thresholds"| Q5
+    Q6 -.-> NET(["web: latest offers / devaluations"])
+
+    classDef store fill:#e8f0fe,stroke:#4285f4,color:#000;
+    classDef ext fill:#fef7e0,stroke:#f9ab00,color:#000;
+    class CFG,DB store;
+    class NET ext;

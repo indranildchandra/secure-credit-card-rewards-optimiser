@@ -1,0 +1,31 @@
+flowchart TD
+    U["You ask:<br/>'Spending Rs.X at a merchant — which card?'"] --> AG["optimizer agent (root router)<br/>local Gemma via Ollama"]
+
+    subgraph Card["Card tools — deterministic, config-driven"]
+        R["find_cards_for_category"]
+        CMP["compare_cards_for_spend"]
+        D["get_card_details"]
+        V["estimate_reward_value /<br/>estimate_net_cost"]
+    end
+
+    subgraph Spend["spend_manager sub-agent (AgentTool)"]
+        SC["check_cap_status /<br/>check_fee_waiver_status"]
+        SR["record_spend / get_spend_history /<br/>assess_card_value"]
+    end
+
+    AG --> R
+    AG --> CMP
+    AG --> D
+    AG --> V
+    AG --> Spend
+    AG --> WS["web search<br/>(Google grounding / DuckDuckGo)"]
+
+    R --> CFG["config/cards.config"]
+    CMP --> CFG
+    D --> CFG
+    V --> CFG
+    SC --> DB["db/ SQLite<br/>user-scoped state"]
+    SR --> DB
+    WS --> NET["web:<br/>latest offers / devaluations"]
+
+    AG --> ANS["Answer:<br/>Winner / Reward / Logic / Live Update"]

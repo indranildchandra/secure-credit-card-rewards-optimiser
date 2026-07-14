@@ -4,6 +4,8 @@ These exercise the wiring and the --once / run_once plumbing WITHOUT calling the
 model: the actual agent reply (which needs a running Ollama) is monkeypatched.
 """
 
+from types import SimpleNamespace
+
 import pytest
 
 import setup_cards
@@ -11,8 +13,93 @@ import setup_cards
 
 def test_agent_wiring():
     assert setup_cards.root_agent.name == "card_setup"
-    # ddg_search + the three config-writer tools.
-    assert len(setup_cards.root_agent.tools) == 4
+    # ddg_search + the four config-writer tools (list/save/add_rule/remove).
+    assert len(setup_cards.root_agent.tools) == 5
+    # The confirm-before-write gate must be wired.
+    assert setup_cards.root_agent.before_tool_callback is not None
+
+
+def _ctx(user_text):
+    return SimpleNamespace(
+        user_content=SimpleNamespace(parts=[SimpleNamespace(text=user_text)])
+    )
+
+
+def test_is_affirmative_word_boundary():
+    assert setup_cards._is_affirmative("yes, save it")
+    assert setup_cards._is_affirmative("go ahead")
+    assert setup_cards._is_affirmative("looks good to me")
+    # 'yesterday' must NOT count as 'yes'.
+    assert not setup_cards._is_affirmative("yesterday I spent 5000 at Croma")
+    assert not setup_cards._is_affirmative("tell me about my HSBC card")
+
+
+def test_is_affirmative_negation_aware():
+    # F10 regression: a negated message must NOT count as confirmation, even
+    # though it contains an affirmation token like "correct"/"approve"/"save".
+    assert not setup_cards._is_affirmative("no, that's not correct")
+    assert not setup_cards._is_affirmative("this is not ok, don't save it")
+    assert not setup_cards._is_affirmative("do not approve this")
+    assert not setup_cards._is_affirmative("wrong, cancel that")
+
+
+def test_is_affirmative_contracted_refusals():
+    # A refusal must never read as consent even though it embeds an affirm word
+    # like "approve"/"confirm"/"yes". The tokeniser keeps the apostrophe, so
+    # modal-negative contractions ("cannot"/"can't"/"won't") veto the affirm.
+    assert not setup_cards._is_affirmative("I cannot approve this")
+    assert not setup_cards._is_affirmative("I won't confirm")
+    assert not setup_cards._is_affirmative("I can't say yes")
+    assert not setup_cards._is_affirmative("I couldn't approve that")
+    assert not setup_cards._is_affirmative("never save it")
+    assert not setup_cards._is_affirmative("nope")
+
+
+def test_is_affirmative_correction_blocks():
+    # An affirmation paired with a correction cue is a change request, not an
+    # approval of the current proposal.
+    assert not setup_cards._is_affirmative("looks perfect, but change the fee first")
+    assert not setup_cards._is_affirmative("yes, but fix the reward rate")
+    assert not setup_cards._is_affirmative("ok, actually update the cap instead")
+    assert not setup_cards._is_affirmative("save it, except edit the forex markup")
+
+
+def test_is_affirmative_genuine_still_pass():
+    # The existing true-positive guarantee must hold.
+    assert setup_cards._is_affirmative("yes")
+    assert setup_cards._is_affirmative("ok")
+    assert setup_cards._is_affirmative("confirm")
+    assert setup_cards._is_affirmative("save it")
+    assert setup_cards._is_affirmative("looks good")
+    assert setup_cards._is_affirmative("go ahead")
+
+
+def test_write_gate_blocks_without_confirmation():
+    tool = SimpleNamespace(name="save_card")
+    result = setup_cards.require_confirmation_before_write(
+        tool, {"card_json": "{}"}, _ctx("research my HDFC card")
+    )
+    assert result is not None and result.get("blocked") is True
+
+
+def test_write_gate_allows_with_confirmation():
+    tool = SimpleNamespace(name="save_card")
+    assert (
+        setup_cards.require_confirmation_before_write(
+            tool, {"card_json": "{}"}, _ctx("yes, save it please")
+        )
+        is None
+    )
+
+
+def test_write_gate_ignores_non_write_tools():
+    tool = SimpleNamespace(name="ddg_search")
+    assert (
+        setup_cards.require_confirmation_before_write(
+            tool, {"query": "x"}, _ctx("anything")
+        )
+        is None
+    )
 
 
 def test_build_runner_creates_session():
