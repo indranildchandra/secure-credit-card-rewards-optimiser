@@ -8,14 +8,21 @@ minimises your net spend — answered entirely on your own machine.**
 A privacy-first rewards strategist for **your** card portfolio, powered by a
 local **Gemma** model via **Ollama**. No cloud LLM. No mailbox access. No paywall.
 
-[![Python](https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![CI](https://github.com/indranildchandra/secure-credit-card-rewards-optimiser/actions/workflows/ci.yml/badge.svg)](https://github.com/indranildchandra/secure-credit-card-rewards-optimiser/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-~87%25-brightgreen)](#testing)
+[![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Model: Gemma](https://img.shields.io/badge/model-Gemma%204-4285F4?logo=google&logoColor=white)](https://ai.google.dev/gemma)
 [![Runs on: Ollama](https://img.shields.io/badge/runtime-Ollama-000000)](https://ollama.com)
-[![Built with: Google ADK](https://img.shields.io/badge/built%20with-Google%20ADK-34A853)](https://google.github.io/adk-docs/)
+[![Built with: Google ADK](https://img.shields.io/badge/built%20with-Google%20ADK%201.33-34A853)](https://google.github.io/adk-docs/)
 [![Privacy](https://img.shields.io/badge/privacy-100%25%20local-success)](#security-model)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 </div>
+
+> **Quickstart (TL;DR):** Python 3.12 + [Ollama](https://ollama.com) →
+> `./setup_venv.sh` → `source .adk_env/bin/activate` → `./run.sh` → open
+> <http://localhost:8080>. Bring your own cards in
+> [`config/cards.config`](config/cards.config). [Full setup ↓](#quickstart)
 
 ---
 
@@ -26,6 +33,14 @@ mailbox access. This tool does exactly one thing — **given a transaction, name
 best card** — and does it offline, so your spending data never leaves your laptop.
 
 <div align="center">
+  <!--
+    LIVE-DEMO GIF: record a short screen capture of one query in the ADK Web UI
+    (e.g. via QuickTime → export as demo/demo.gif, or `gifski`), drop the file at
+    demo/demo.gif, then DELETE the <img> for the jpeg below and UNCOMMENT this one:
+  <img src="demo/demo.gif" alt="Animated demo: asking the optimiser which card to use and getting a Winner / Reward / Logic / Live Update answer, fully offline" width="640">
+  <br>
+  <em>Live run: a "which card?" question answered locally in seconds.</em>
+  -->
   <img src="demo/demo.jpeg" alt="Sample optimiser output: which card to use for a MacBook Pro purchase — winner, runner-up, a comparison table, and a recommendation" width="600">
   <br>
   <em>Sample run: the optimiser working through a "which card for a MacBook Pro?" decision.</em>
@@ -219,11 +234,11 @@ config — delivering cloud-quality rewards advice with on-device privacy.
 
 ## Quickstart
 
-**Prerequisites:** Python 3.9+ and [Ollama](https://ollama.com). Dependencies are
-pinned in [`requirements.txt`](requirements.txt); the **Google ADK** version is
-selected by your Python version — **`google-adk==1.33.0` on Python 3.10+**
-(the primary target), `1.15.1` on 3.9, `0.3.0` below that. LiteLLM (`1.83.14`)
-bridges ADK to the local Ollama model.
+**Prerequisites:** Python **3.12** and [Ollama](https://ollama.com). Dependencies
+are pinned in [`requirements.txt`](requirements.txt); the developed and tested
+combination is **Python 3.12 + `google-adk==1.33.0`**, with LiteLLM (`1.83.14`)
+bridging ADK to the local Ollama model. (Version markers keep 3.9–3.11 installing
+too, but 3.12 is the target.)
 
 ```bash
 git clone https://github.com/indranildchandra/secure-credit-card-rewards-optimiser.git
