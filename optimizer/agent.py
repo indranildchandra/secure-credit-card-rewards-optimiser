@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 
 from config import MODEL
 from .context_window import trim_history_before_model
+from .answer_cleaner import clean_final_answer
 from .loop_guard import ground_and_break_tool_loops
 from .spend_agent import spend_manager_tool
 from tools.web_search import build_web_search_tool
@@ -73,6 +74,7 @@ root_agent = Agent(
         web_search_tool,
     ],
     before_model_callback=_before_model,
+    after_model_callback=clean_final_answer,
 )
 
 print(" Credit Card Optimiser agent ready.")
