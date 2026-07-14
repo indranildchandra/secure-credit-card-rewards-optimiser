@@ -156,8 +156,8 @@ flowchart TD
     subgraph P2["② Import past spends — so caps & milestones are accurate (optional)"]
         direction TB
         I1["Export your card statement as CSV<br/>(convert a PDF statement to CSV first if needed)"] --> I2["You run:<br/>python scripts/import_spends.py --csv statement.csv"]
-        I2 --> I3["Parses rows on-device, nets debits vs credits,<br/>skips ambiguous cards · keeps last 13 months"]
-        I3 --> DB[("db/ SQLite<br/>user-scoped spend log")]
+        I2 --> I3["Parses on-device, nets debits vs credits,<br/>skips ambiguous cards · aggregates to monthly totals<br/>(CSV & line items discarded) · keeps last 13 months"]
+        I3 --> DB[("db/ SQLite<br/>monthly per-card / per-category totals only")]
     end
 
     subgraph P3["③ Ask anytime — get the winning card"]
@@ -206,10 +206,22 @@ you've already spent this cycle. Export your card statement as **CSV** (if your
 issuer only gives a PDF, convert it to CSV first) and run
 `python scripts/import_spends.py --csv statement.csv`. It parses the rows
 **entirely on-device**, nets debits against credits/refunds, skips rows whose card
-can't be matched unambiguously, and keeps the most-recent 13 months in the local
-SQLite store under `db/`. Nothing here touches the network. You can skip this and
-just let the agent record spends as you confirm purchases — importing simply
-seeds the history so caps are correct from day one.
+can't be matched unambiguously, and keeps the most-recent 13 months. Nothing here
+touches the network.
+
+**The CSV is never stored, and neither is any transaction.** The script reads the
+file in place — it never copies or moves it — and immediately **aggregates the rows
+into monthly per-category and per-card totals**. Only those totals are written to
+the local SQLite store under `db/` (the same user-scoped state the agent already
+uses). Individual line items, merchant names and dates are discarded; the durable
+footprint is just buckets like _"2026-06: dining ₹9,000, groceries ₹3,000"_ — the
+minimum needed for cap and milestone math. The statement stays a file you control
+and can delete; the optimiser keeps no copy of it. Use `--dry-run` to preview the
+parsed rows without writing anything, and match `--user`/`--app` to your Web UI
+identity (defaults: `user` / `optimizer`) if imported totals don't appear.
+
+You can skip this step entirely and just let the agent record spends as you confirm
+purchases — importing simply seeds the history so caps are correct from day one.
 
 ### ③ Ask a question → Winner / Reward / Logic / Live Update
 
