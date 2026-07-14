@@ -41,9 +41,9 @@ best card** — and does it offline, so your spending data never leaves your lap
   <br>
   <em>Live run: a "which card?" question answered locally in seconds.</em>
   -->
-  <img src="demo/demo.jpeg" alt="Sample optimiser output: which card to use for a MacBook Pro purchase — winner, runner-up, a comparison table, and a recommendation" width="600">
+  <img src="demo/demo-1.jpeg" alt="Sample output: which card to use for a MacBook Pro purchase — winner, runner-up, a comparison table, and a recommendation" width="600">
   <br>
-  <em>Sample run: the optimiser working through a "which card for a MacBook Pro?" decision.</em>
+  <em>Sample run: working through a "which card for a MacBook Pro?" decision.</em>
 </div>
 
 ## Table of contents
@@ -338,9 +338,9 @@ demonstrates the portability ADK provides across Google's local (Gemma) and host
 > the reference file explains how the two differ.
 
 <div align="center">
-  <img src="demo/gemini-gem-example.jpeg" alt="The Gemini Gem answering which card to use for a Star Health insurance renewal — Winner: Tata Neu Infinity, with reward, logic and a live-update note" width="620">
+  <img src="demo/demo-2.png" alt="The Gemini Gem answering which card to use for a Star Health insurance renewal — Winner: Tata Neu Infinity, with reward, logic and a live-update note" width="620">
   <br>
-  <em>The reference Gemini Gem in action (cloud): the same Winner / Reward / Logic / Live Update format, running inside a Gemini account.</em>
+  <em>The reference Gemini Gem in action (cloud): a Star Health insurance renewal answered in the same Winner / Reward / Logic / Live Update format, inside a Gemini account.</em>
 </div>
 
 **TL;DR:** a Gemma model (via Ollama) orchestrates a set of deterministic tools,
