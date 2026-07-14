@@ -120,6 +120,12 @@ if _provider == "ollama":
         if _api_key:
             _ollama_kwargs["api_key"] = _api_key
 
+    # Give the model enough output tokens to finish the four-field answer.
+    # Ollama's default num_predict can cut a small model off mid-generation
+    # (observed: a Gemma answer truncating before "The Winner"). LiteLLM forwards
+    # num_predict straight to the Ollama request options.
+    _ollama_kwargs.setdefault("num_predict", 2048)
+
     MODEL = LiteLlm(model=f"ollama_chat/{_model_name}", **_ollama_kwargs)
 else:
     MODEL = _model_name

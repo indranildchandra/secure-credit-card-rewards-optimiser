@@ -1,10 +1,10 @@
-"""Offline tests for grounding + loop-breaking (optimizer/loop_guard.py).
+"""Offline tests for the ground-and-finalise guard (optimizer/loop_guard.py).
 
-Builds real ADK LlmRequest objects with scripted function-call/response history
-and asserts: nothing happens before any tool runs; once a tool HAS run the model
-is grounded in the real result (so it can't hallucinate an off-portfolio card);
-and an identical-repeat loop (or over-budget turn) also strips the tools. No
-model / network involved.
+The guard collapses the weak-model flow to "one tool call, then the answer":
+before any tool runs it does nothing; once ANY tool has returned it strips the
+tools (so the next generation must be text), grounds the model in the real
+result, spells out the winner, and reserves output-token budget. No model /
+network involved.
 """
 
 from google.adk.models import LlmRequest
@@ -12,7 +12,8 @@ from google.genai import types
 
 from optimizer.loop_guard import (
     ground_and_break_tool_loops,
-    _identical_call_counts,
+    _primary_card,
+    _ANSWER_TOKEN_BUDGET,
 )
 
 
@@ -49,16 +50,12 @@ def _last_text(req):
     )
 
 
-def test_identical_call_counts_distinguishes_args():
-    counts = _identical_call_counts(
-        [
-            _call("get_card_details", card_name="HDFC"),
-            _call("get_card_details", card_name="HDFC"),  # identical
-            _call("get_card_details", card_name="Amex"),  # different args
-        ]
-    )
-    assert max(counts.values()) == 2  # the two identical HDFC calls
-    assert len(counts) == 2  # HDFC and Amex are distinct keys
+def test_primary_card_extracted_from_routing_result():
+    results = [
+        ("find_cards_for_category", {"matches": [{"primary": "Tata Neu Infinity"}]})
+    ]
+    assert _primary_card(results) == "Tata Neu Infinity"
+    assert _primary_card([("ddg_search", {"text": "..."})]) is None
 
 
 def test_no_tool_result_yet_is_a_noop():
@@ -67,12 +64,12 @@ def test_no_tool_result_yet_is_a_noop():
     n_before = len(req.contents)
     assert ground_and_break_tool_loops(None, req) is None
     assert len(req.contents) == n_before  # no note appended
-    assert len(req.config.tools) == 1  # tools still offered
+    assert len(req.config.tools) == 1  # tools still offered for the first call
 
 
-def test_single_call_grounds_but_keeps_tools():
-    # One routing call + result, no loop: tools stay offered, but the model is
-    # grounded in the real result so it cannot invent a card.
+def test_after_routing_forces_answer_with_the_winner():
+    # The Croma case: find_cards returned Tata Neu Infinity. The guard must strip
+    # tools (no web-search/extra turn to spiral into) and hand the winner over.
     req = _request(
         [
             _call(
@@ -80,54 +77,45 @@ def test_single_call_grounds_but_keeps_tools():
             ),
             _result(
                 "find_cards_for_category",
-                {"matches": [{"primary": "Tata Neu Infinity"}]},
+                {
+                    "matches": [
+                        {
+                            "primary": "Tata Neu Infinity",
+                            "fallback": "Tata Star SBI Platinum",
+                        }
+                    ]
+                },
             ),
         ]
     )
     assert ground_and_break_tool_loops(None, req) is None
-    assert len(req.config.tools) == 1  # NOT stripped (no loop)
+    assert req.config.tools == []  # tools stripped -> next gen must be the answer
+    assert req.config.max_output_tokens == _ANSWER_TOKEN_BUDGET  # room to finish
     text = _last_text(req)
-    assert "grounding" in text.lower()
-    assert "Tata Neu Infinity" in text  # real result surfaced as readable text
-    assert "do not call any more tools" not in text.lower()  # not forced final yet
+    assert "THE WINNER IS" in text
+    assert "Tata Neu Infinity" in text  # winner handed to the model
+    assert "never invent" in text.lower()
 
 
-def test_grounding_pins_winner_to_results():
-    # The Croma bug: the model must be told the Winner MUST be one of these cards.
+def test_ambiguous_result_asks_instead_of_inventing():
+    # A disambiguation tool result (no routing primary) -> instruction to ASK, not
+    # to fabricate a winner.
     req = _request(
         [
-            _call(
-                "find_cards_for_category", merchant_or_category="Amazon", amount=4000
-            ),
+            _call("find_matching_cards", card_name="axis"),
             _result(
-                "find_cards_for_category",
-                {"matches": [{"primary": "ICICI AmazonPay"}]},
+                "find_matching_cards",
+                {"ambiguous": True, "matches": ["Axis Rewards", "Axis RuPay"]},
             ),
         ]
     )
     ground_and_break_tool_loops(None, req)
     text = _last_text(req).lower()
-    assert "must be" in text and "ICICI AmazonPay".lower() in text
-    assert "do not invent" in text
+    assert "ask which one" in text
+    assert "axis rewards" in text and "axis rupay" in text
 
 
-def test_same_tool_different_args_is_allowed():
-    # Legit multi-call: get_card_details for two cards -> different args -> tools
-    # stay offered (grounding still applied).
-    req = _request(
-        [
-            _call("get_card_details", card_name="HDFC Regalia Gold"),
-            _result("get_card_details", {"name": "HDFC Regalia Gold"}),
-            _call("get_card_details", card_name="Amex Platinum Travel"),
-            _result("get_card_details", {"name": "Amex Platinum Travel"}),
-        ]
-    )
-    assert ground_and_break_tool_loops(None, req) is None
-    assert len(req.config.tools) == 1  # not clipped
-
-
-def test_identical_repeat_breaks_and_grounds():
-    # Identical repeated call -> loop -> strip tools AND force a final answer.
+def test_does_not_override_an_existing_token_budget():
     req = _request(
         [
             _call(
@@ -137,23 +125,8 @@ def test_identical_repeat_breaks_and_grounds():
                 "find_cards_for_category",
                 {"matches": [{"primary": "ICICI AmazonPay"}]},
             ),
-            _call(
-                "find_cards_for_category", merchant_or_category="Amazon", amount=4000
-            ),
         ]
     )
-    assert ground_and_break_tool_loops(None, req) is None
-    assert req.config.tools == []  # tools stripped -> must answer as text
-    text = _last_text(req)
-    assert "ICICI AmazonPay" in text
-    assert "do not call any more tools" in text.lower()
-
-
-def test_total_budget_backstop_breaks_runaway():
-    # A pathological loop that varies its args still can't run forever.
-    contents = []
-    for i in range(10):
-        contents += [_call(f"tool_{i}"), _result(f"tool_{i}", {"n": i})]
-    req = _request(contents)
-    assert ground_and_break_tool_loops(None, req) is None
-    assert req.config.tools == []
+    req.config.max_output_tokens = 512  # caller already set a budget
+    ground_and_break_tool_loops(None, req)
+    assert req.config.max_output_tokens == 512  # respected, not clobbered
