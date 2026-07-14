@@ -444,10 +444,18 @@ release when a model is available. Grading is deterministic (does the expected
 card appear in the answer's *Winner*?). Cases live in
 [`evals/cases.py`](evals/cases.py) — keep them aligned with `config/cards.config`.
 
-A subset also runs under pytest (`tests/test_evals.py`) and is **auto-skipped
-when Ollama isn't reachable**, so the offline suite and CI stay green. (The ADK
-wiring itself is proven without a model by
-[`tests/test_agent_smoke.py`](tests/test_agent_smoke.py), which never skips.)
+A subset also lives under pytest (`tests/test_evals.py`) but is **opt-in** — the
+default `pytest tests/` run **never** executes it (it stays fast and fully
+offline *even on a machine with Ollama running*). To run that subset through
+pytest:
+
+```bash
+RUN_LIVE_EVALS=1 python -m pytest tests/test_evals.py -q   # needs Ollama
+```
+
+That keeps the everyday suite deterministic and CI green, while the ADK wiring is
+still proven without a model by
+[`tests/test_agent_smoke.py`](tests/test_agent_smoke.py), which never skips.
 
 ## Model (Gemma via Ollama)
 
@@ -601,8 +609,9 @@ CONTRIBUTING.md             how to contribute
 
 ## Testing
 
-The deterministic core is covered by a fast, fully-offline pytest suite (no LLM,
-no network):
+The deterministic core is covered by a fast, fully-offline pytest suite — no LLM,
+no network, ~5 seconds, and it stays offline **even if Ollama is running** (the
+live-model evals are opt-in; see [below](#agent-level-evals)):
 
 ```bash
 source .adk_env/bin/activate

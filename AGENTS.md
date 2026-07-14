@@ -167,7 +167,9 @@ covered by a config-driven test (see `tests/test_spend_tracker.py` for the
 pattern that registers a card purely via config data). `tests/test_agent_smoke.py`
 drives the real agent through ADK's runner with a scripted model (no Ollama), so
 the agent→tool→response wiring stays proven in CI; the full LLM-in-the-loop path
-is graded by `evals/` (needs a live model, skipped offline).
+is graded by `evals/` (needs a live model; **opt-in** — `pytest tests/` never
+runs the evals, even with Ollama up. Enable with `RUN_LIVE_EVALS=1` or run
+`python evals/run_evals.py`).
 
 ## Commits & pull requests
 
