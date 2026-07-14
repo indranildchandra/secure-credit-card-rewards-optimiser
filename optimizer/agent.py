@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 from config import MODEL
 from .context_window import trim_history_before_model
-from .loop_guard import break_tool_call_loops
+from .loop_guard import ground_and_break_tool_loops
 from .spend_agent import spend_manager_tool
 from tools.web_search import build_web_search_tool
 from tools.card_tools import (
@@ -47,9 +47,10 @@ with open(_PROMPT_PATH, encoding="utf-8") as _f:
 
 
 def _before_model(callback_context, llm_request):
-    """Composed before_model_callback: break tool-call loops first (a safety net
-    for weak local models), then apply optional history compaction."""
-    result = break_tool_call_loops(callback_context, llm_request)
+    """Composed before_model_callback: ground the model in tool results and break
+    tool-call loops (a safety net for weak local models), then apply optional
+    history compaction."""
+    result = ground_and_break_tool_loops(callback_context, llm_request)
     if result is not None:
         return result
     return trim_history_before_model(callback_context, llm_request)
