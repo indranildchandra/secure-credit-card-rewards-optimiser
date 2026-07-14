@@ -1,31 +1,27 @@
-"""Ground-and-finalise guard for weak local tool-calling models.
+"""Ground-and-guard for weak local tool-calling models.
 
-First-principles rationale: the routing is DETERMINISTIC — once
-``find_cards_for_category`` returns, the winning card is already decided. A weak
-model served via Ollama (e.g. Gemma) does not need to keep orchestrating after
-that; asking it to (web-search, re-reason across more turns) is exactly what
-makes it spiral, loop, hallucinate, or truncate mid-thought without ever emitting
-the answer.
+Two independent problems with small Ollama-served models (e.g. Gemma):
 
-So this ``before_model_callback`` lets a query PROGRESS through the tools it
-genuinely needs — e.g. a compound "record my spend, then which card?" runs
-``spend_manager`` and *then* ``find_cards_for_category`` — and only forces the
-final answer once a routing/disambiguation tool has actually answered (or a
-per-turn budget is hit). At that point it:
+* they ignore the structured ``function_response`` and then hallucinate a card
+  that isn't in the portfolio / routing result; and
+* they can re-issue the SAME call forever (an infinite loop).
 
-  1. strips the tools so the next generation cannot start another tool/reason
-     turn (e.g. the web-search spiral) — it MUST produce text;
-  2. re-states the tool outputs as plain text (weak models ignore the structured
-     ``function_response``) and, when routing produced a primary card, hands that
-     card to the model directly ("The Winner is X");
-  3. raises the output-token budget so the four-field answer isn't truncated.
+This ``before_model_callback`` handles both WITHOUT clipping legitimate work:
 
-Deterministic, no extra LLM call. A capable model is unaffected — it would have
-answered after the routing call anyway; this just guarantees a weak one does too.
+* it lets the model call any NEW tool it needs (a compound "record my spend, then
+  which card?" runs ``spend_manager`` and then ``find_cards_for_category``; a
+  comparison can look up two cards) — tools stay available;
+* once a routing/disambiguation tool has answered it GROUNDS the model in the
+  real result (as plain text, with the winner spelled out) so it answers from
+  facts, not guesses — but still lets it make a different call if it truly needs
+  one;
+* it only STRIPS the tools (forcing a text answer) when the model repeats an
+  IDENTICAL call (same tool + same args = a loop) or blows a per-turn budget.
 
-Trade-off (intentional, for reliability): the always-on web-search "Live Update"
-step is skipped — the answer relies on the local config, and the Live Update
-field falls back to "No notable changes found". Reliability > freshness here.
+Web search is opt-in (see the prompt): a normal "which card?" question never
+calls it, so those answers are fast and fully offline.
+
+Deterministic, no extra LLM call.
 """
 
 import json
@@ -34,15 +30,13 @@ from google.genai import types
 
 # Generous output budget so the answer never truncates mid-generation.
 _ANSWER_TOKEN_BUDGET = 2048
-
-# Tools whose result means "we now have the recommendation / disambiguation" —
-# i.e. it is time to stop and answer. Everything else (e.g. spend_manager to
-# record a spend) may legitimately precede routing in a compound query.
+# Same tool + same args this many times in a turn == a loop → force a text answer.
+_IDENTICAL_CALL_THRESHOLD = 2
+# Runaway backstop: force an answer after this many total tool calls in a turn.
+_MAX_TOOL_CALLS_PER_TURN = 6
+# Tools whose result means "we now have the recommendation / disambiguation", so
+# it's time to ground the model toward answering (other tools may precede these).
 _ROUTING_TOOLS = ("find_cards_for_category", "find_matching_cards")
-
-# Backstop: force an answer after this many tool results even without a routing
-# tool, so a non-routing loop can't run forever.
-_MAX_TOOL_CALLS_PER_TURN = 4
 
 
 def _recent_tool_results(contents, limit: int = 4) -> list:
@@ -68,23 +62,61 @@ def _primary_card(results):
     return None
 
 
-def _grounding_note(results) -> str:
-    """Instruction that forces the final answer, handing the model the winner."""
+def _canonical_args(function_call) -> str:
+    """Stable string for a call's arguments so identical calls compare equal."""
+    args = getattr(function_call, "args", None) or {}
+    try:
+        return json.dumps(args, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return str(args)
+
+
+def _identical_call_counts(contents) -> dict:
+    """Count function calls keyed by (tool name, canonical arguments)."""
+    counts: dict = {}
+    for content in contents or []:
+        for part in getattr(content, "parts", None) or []:
+            fc = getattr(part, "function_call", None)
+            name = getattr(fc, "name", None) if fc is not None else None
+            if name:
+                key = (name, _canonical_args(fc))
+                counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _grounding_note(results, force: bool) -> str:
+    """Instruction restating the tool outputs as plain text.
+
+    ``force`` (a loop / budget was hit) → hard stop. Otherwise a soft nudge that
+    hands over the winner and biases answering, while still permitting a NEW tool
+    call if the model genuinely needs one.
+    """
     primary = _primary_card(results)
-    if primary:
+    if force:
         head = (
-            f"STOP — you already have the routing result. THE WINNER IS "
-            f"**{primary}**. Do not think further and do not call any tools. "
+            f"STOP — do not call any more tools. THE WINNER IS **{primary}**. "
+            if primary
+            else "STOP — do not call any more tools. "
+        ) + (
             "Output ONLY the four fields now, starting with '**The Winner:**', "
-            "based on the facts below. Name ONLY a card that appears in these "
-            "results — never invent a card."
+            "using the facts below. Name ONLY a card that appears in these results "
+            "— never invent a card. (If the user named a card that matches more "
+            "than one result, ask which one instead.)"
+        )
+    elif primary:
+        head = (
+            f"You have the routing result. THE WINNER IS **{primary}**. Write the "
+            "four-field answer NOW using the facts below — name ONLY a card that "
+            "appears here, never invent one. Do NOT repeat a call you already "
+            "made; only call a DIFFERENT tool if the user specifically needs it "
+            "(e.g. they asked about current offers → web search)."
         )
     else:
         head = (
-            "STOP — do not call any more tools. Respond NOW using ONLY the tool "
-            "results below (if the user named a card that matches more than one "
-            "result, ask which one they mean instead of guessing). Name ONLY a "
-            "card that appears in these results — never invent a card."
+            "Use these tool results as FACTS — name ONLY a card that appears in "
+            "them, never invent one. If the user named a card that matches more "
+            "than one result, ask which one. If you have enough, answer now; only "
+            "call a DIFFERENT tool if you truly need more, and NEVER repeat a call."
         )
     lines = [head, "", "Tool results this turn:"]
     for name, resp in results:
@@ -97,38 +129,43 @@ def _grounding_note(results) -> str:
 
 
 def ground_and_break_tool_loops(callback_context, llm_request):
-    """ADK before_model_callback: let compound queries progress, then finalise.
+    """ADK before_model_callback: allow new tool calls, ground, break loops.
 
     Mutates ``llm_request`` in place and returns None (proceed). No-op while the
-    model is still legitimately gathering (e.g. it recorded a spend but hasn't
-    routed yet). Once a routing/disambiguation tool has answered — or the per-turn
-    budget is hit — it strips the tools, grounds the model in the real result
-    (with the winner spelled out), and guarantees room for the answer.
+    model is still gathering (e.g. it recorded a spend but hasn't routed). Once a
+    routing tool has answered it grounds the model toward the answer (tools stay
+    available for a genuinely different call); it strips the tools only on an
+    identical-call loop or a per-turn budget overrun.
     """
     contents = getattr(llm_request, "contents", None)
     results = _recent_tool_results(contents, limit=64)
     if not results:
         return None  # no tool output yet — let the model make its first tool call
 
-    # Let a compound query keep gathering until a routing/disambiguation tool has
-    # answered (or we hit the backstop). This is what lets "record my spend, then
-    # which card?" call spend_manager AND then find_cards_for_category.
+    counts = _identical_call_counts(contents)
+    total = sum(counts.values())
+    repeated = max(counts.values()) if counts else 0
+    force = repeated >= _IDENTICAL_CALL_THRESHOLD or total >= _MAX_TOOL_CALLS_PER_TURN
     routing_done = any(name in _ROUTING_TOOLS for name, _ in results)
-    if not routing_done and len(results) < _MAX_TOOL_CALLS_PER_TURN:
-        return None  # still gathering (not a loop) — keep the tools available
+
+    # Still gathering (no routing yet, not a loop) — let the model call its next
+    # (different) tool without interference.
+    if not force and not routing_done:
+        return None
 
     config = getattr(llm_request, "config", None)
     if config is not None:
-        # No more tool/reason turns — the next generation must be the answer.
-        config.tools = []
-        if getattr(config, "tool_config", None) is not None:
-            config.tool_config = None
+        if force:
+            # A loop / runaway — remove tools so the next generation is text.
+            config.tools = []
+            if getattr(config, "tool_config", None) is not None:
+                config.tool_config = None
         # Room to finish the four fields without truncating mid-generation.
         if not getattr(config, "max_output_tokens", None):
             config.max_output_tokens = _ANSWER_TOKEN_BUDGET
 
     note = types.Content(
-        role="user", parts=[types.Part(text=_grounding_note(results[-4:]))]
+        role="user", parts=[types.Part(text=_grounding_note(results[-4:], force))]
     )
     llm_request.contents = list(contents or []) + [note]
     return None

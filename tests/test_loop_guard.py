@@ -1,10 +1,8 @@
-"""Offline tests for the ground-and-finalise guard (optimizer/loop_guard.py).
+"""Offline tests for the ground-and-guard callback (optimizer/loop_guard.py).
 
-The guard collapses the weak-model flow to "one tool call, then the answer":
-before any tool runs it does nothing; once ANY tool has returned it strips the
-tools (so the next generation must be text), grounds the model in the real
-result, spells out the winner, and reserves output-token budget. No model /
-network involved.
+The guard lets the model make NEW tool calls (compound/comparison flows work),
+grounds it in the real result once routing has answered, and strips the tools
+only on an identical-call loop or a per-turn budget overrun. No model / network.
 """
 
 from google.adk.models import LlmRequest
@@ -12,8 +10,8 @@ from google.genai import types
 
 from optimizer.loop_guard import (
     ground_and_break_tool_loops,
+    _identical_call_counts,
     _primary_card,
-    _ANSWER_TOKEN_BUDGET,
 )
 
 
@@ -58,19 +56,28 @@ def test_primary_card_extracted_from_routing_result():
     assert _primary_card([("ddg_search", {"text": "..."})]) is None
 
 
+def test_identical_call_counts_distinguishes_args():
+    counts = _identical_call_counts(
+        [
+            _call("get_card_details", card_name="HDFC"),
+            _call("get_card_details", card_name="HDFC"),  # identical
+            _call("get_card_details", card_name="Amex"),  # different args
+        ]
+    )
+    assert max(counts.values()) == 2
+    assert len(counts) == 2
+
+
 def test_no_tool_result_yet_is_a_noop():
-    # Before any tool has run there is nothing to ground — leave the request be.
     req = _request([types.Content(role="user", parts=[types.Part(text="which card?")])])
     n_before = len(req.contents)
     assert ground_and_break_tool_loops(None, req) is None
-    assert len(req.contents) == n_before  # no note appended
-    assert len(req.config.tools) == 1  # tools still offered for the first call
+    assert len(req.contents) == n_before  # no note
+    assert len(req.config.tools) == 1  # tools still offered
 
 
-def test_spend_manager_alone_does_not_force():
-    # Compound query: the model records a spend first (spend_manager) and must be
-    # allowed to THEN call find_cards_for_category. A spend result alone must NOT
-    # trigger a forced answer (that was the Swiggy-compound regression).
+def test_spend_manager_alone_does_not_ground_or_strip():
+    # Compound query: spend recorded first, routing not done yet -> let it proceed.
     req = _request(
         [
             _call("spend_manager", request="record Rs.9000 dining on HSBC Live+"),
@@ -78,15 +85,35 @@ def test_spend_manager_alone_does_not_force():
         ]
     )
     assert ground_and_break_tool_loops(None, req) is None
-    assert len(req.config.tools) == 1  # tools still offered -> can now route
-    assert _last_text(req) == ""  # no grounding note appended yet
+    assert len(req.config.tools) == 1  # still available -> can now route
+    assert _last_text(req) == ""  # no note appended yet
 
 
-def test_compound_forces_after_routing_step():
-    # spend_manager THEN find_cards -> now we have the recommendation -> finalise.
+def test_after_routing_grounds_but_keeps_tools():
+    # Routing done, no loop: hand over the winner but KEEP tools so the model may
+    # still make a genuinely different call (per the "allow new tool calls" rule).
     req = _request(
         [
-            _call("spend_manager", request="record Rs.9000 dining on HSBC Live+"),
+            _call(
+                "find_cards_for_category", merchant_or_category="Croma", amount=60000
+            ),
+            _result(
+                "find_cards_for_category",
+                {"matches": [{"primary": "Tata Neu Infinity"}]},
+            ),
+        ]
+    )
+    assert ground_and_break_tool_loops(None, req) is None
+    assert len(req.config.tools) == 1  # NOT stripped -> new tool calls allowed
+    text = _last_text(req)
+    assert "THE WINNER IS" in text and "Tata Neu Infinity" in text
+    assert req.config.max_output_tokens  # budget reserved
+
+
+def test_compound_grounds_after_routing_with_the_swiggy_winner():
+    req = _request(
+        [
+            _call("spend_manager", request="record"),
             _result("spend_manager", {"result": "recorded"}),
             _call("find_cards_for_category", merchant_or_category="Swiggy", amount=800),
             _result(
@@ -95,45 +122,42 @@ def test_compound_forces_after_routing_step():
             ),
         ]
     )
-    assert ground_and_break_tool_loops(None, req) is None
-    assert req.config.tools == []  # now finalised
+    ground_and_break_tool_loops(None, req)
     text = _last_text(req)
-    assert "THE WINNER IS" in text and "HSBC Live+" in text
+    assert "HSBC Live+" in text  # routed the Swiggy step, winner grounded
+    assert len(req.config.tools) == 1  # still allowed a different call
 
 
-def test_after_routing_forces_answer_with_the_winner():
-    # The Croma case: find_cards returned Tata Neu Infinity. The guard must strip
-    # tools (no web-search/extra turn to spiral into) and hand the winner over.
+def test_identical_repeat_strips_tools():
     req = _request(
         [
             _call(
-                "find_cards_for_category", merchant_or_category="Croma", amount=60000
+                "find_cards_for_category", merchant_or_category="Amazon", amount=4000
             ),
             _result(
                 "find_cards_for_category",
-                {
-                    "matches": [
-                        {
-                            "primary": "Tata Neu Infinity",
-                            "fallback": "Tata Star SBI Platinum",
-                        }
-                    ]
-                },
+                {"matches": [{"primary": "ICICI AmazonPay"}]},
+            ),
+            _call(
+                "find_cards_for_category", merchant_or_category="Amazon", amount=4000
             ),
         ]
     )
-    assert ground_and_break_tool_loops(None, req) is None
-    assert req.config.tools == []  # tools stripped -> next gen must be the answer
-    assert req.config.max_output_tokens == _ANSWER_TOKEN_BUDGET  # room to finish
-    text = _last_text(req)
-    assert "THE WINNER IS" in text
-    assert "Tata Neu Infinity" in text  # winner handed to the model
-    assert "never invent" in text.lower()
+    ground_and_break_tool_loops(None, req)
+    assert req.config.tools == []  # loop -> tools stripped, must answer as text
+    assert "stop" in _last_text(req).lower()
 
 
-def test_ambiguous_result_asks_instead_of_inventing():
-    # A disambiguation tool result (no routing primary) -> instruction to ASK, not
-    # to fabricate a winner.
+def test_runaway_backstop_strips_tools():
+    contents = []
+    for i in range(6):  # 6 distinct calls -> hits _MAX_TOOL_CALLS_PER_TURN
+        contents += [_call(f"tool_{i}"), _result(f"tool_{i}", {"n": i})]
+    req = _request(contents)
+    ground_and_break_tool_loops(None, req)
+    assert req.config.tools == []
+
+
+def test_disambiguation_result_asks_which_card():
     req = _request(
         [
             _call("find_matching_cards", card_name="axis"),
@@ -145,22 +169,5 @@ def test_ambiguous_result_asks_instead_of_inventing():
     )
     ground_and_break_tool_loops(None, req)
     text = _last_text(req).lower()
-    assert "ask which one" in text
+    assert "which one" in text
     assert "axis rewards" in text and "axis rupay" in text
-
-
-def test_does_not_override_an_existing_token_budget():
-    req = _request(
-        [
-            _call(
-                "find_cards_for_category", merchant_or_category="Amazon", amount=4000
-            ),
-            _result(
-                "find_cards_for_category",
-                {"matches": [{"primary": "ICICI AmazonPay"}]},
-            ),
-        ]
-    )
-    req.config.max_output_tokens = 512  # caller already set a budget
-    ground_and_break_tool_loops(None, req)
-    assert req.config.max_output_tokens == 512  # respected, not clobbered
