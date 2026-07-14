@@ -219,7 +219,11 @@ config — delivering cloud-quality rewards advice with on-device privacy.
 
 ## Quickstart
 
-**Prerequisites:** Python 3.9+ and [Ollama](https://ollama.com).
+**Prerequisites:** Python 3.9+ and [Ollama](https://ollama.com). Dependencies are
+pinned in [`requirements.txt`](requirements.txt); the **Google ADK** version is
+selected by your Python version — **`google-adk==1.33.0` on Python 3.10+**
+(the primary target), `1.15.1` on 3.9, `0.3.0` below that. LiteLLM (`1.83.14`)
+bridges ADK to the local Ollama model.
 
 ```bash
 git clone https://github.com/indranildchandra/secure-credit-card-rewards-optimiser.git
@@ -381,16 +385,40 @@ keyed by `--user`/`--app` to match the ADK Web UI — see the script's `--help`.
 
 ## Agent-level evals
 
-Unit tests cover the deterministic tools; the end-to-end **evals** check the
-agent's actual card choices (prompt + routing + tools):
+Unit tests cover the deterministic tools; the end-to-end **evals** run the *real*
+agent and grade its actual card choices (prompt → routing → tools → answer).
+Unlike the offline suite, they need a **live model**.
+
+**Run them:**
 
 ```bash
-python evals/run_evals.py     # needs Ollama running; exit code = failures
+# 1. Prereqs: the model must be pulled and Ollama running.
+ollama serve &                      # if not already running
+ollama pull gemma4:e4b              # the tag in config/model.config
+
+# 2. Activate the venv and run the eval suite.
+source .adk_env/bin/activate
+python evals/run_evals.py
 ```
 
-Cases live in [`evals/cases.py`](evals/cases.py). A subset also runs under pytest
-(`tests/test_evals.py`) and is **auto-skipped when Ollama isn't reachable**, so
-the offline suite and CI stay green.
+What you'll see — one line per case, then a summary:
+
+```
+[PASS] expect 'ICICI AmazonPay' — I am spending Rs.4,000 on Amazon. Which card?
+[PASS] expect 'Tata Neu Infinity' — I am buying a TV at Croma for Rs.60,000. …
+…
+8/8 passed.
+```
+
+The **exit code is the number of failures** (`0` = all passed), so it can gate a
+release when a model is available. Grading is deterministic (does the expected
+card appear in the answer's *Winner*?). Cases live in
+[`evals/cases.py`](evals/cases.py) — keep them aligned with `config/cards.config`.
+
+A subset also runs under pytest (`tests/test_evals.py`) and is **auto-skipped
+when Ollama isn't reachable**, so the offline suite and CI stay green. (The ADK
+wiring itself is proven without a model by
+[`tests/test_agent_smoke.py`](tests/test_agent_smoke.py), which never skips.)
 
 ## Model (Gemma via Ollama)
 
