@@ -615,8 +615,20 @@ live-model evals are opt-in; see [below](#agent-level-evals)):
 
 ```bash
 source .adk_env/bin/activate
-python -m pytest tests/ -q
+
+# Everyday — fast, fully offline (~5s). Evals skip even if Ollama is running.
+python -m pytest tests/ -q                                  # 168 passed, 4 skipped
+
+# Run the live-model evals deliberately (needs Ollama + the model pulled):
+RUN_LIVE_EVALS=1 python -m pytest tests/test_evals.py -q    # a subset, via pytest
+python evals/run_evals.py                                   # full set, PASS/FAIL report
 ```
+
+> **Two ways to run the evals, one set of cases.** `tests/test_evals.py` runs a
+> subset of [`evals/cases.py`](evals/cases.py) as pytest tests (for CI/opt-in);
+> `evals/run_evals.py` runs the **full** set as a standalone script and prints a
+> report (exit code = number of failures). Both use the same agent + grading —
+> see [Agent-level evals](#agent-level-evals).
 
 It validates decision-matrix routing, reward estimates, cap/threshold math, card
 disambiguation, config validation, spend import, and the privacy sanitiser —
