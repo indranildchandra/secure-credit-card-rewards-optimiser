@@ -28,6 +28,27 @@ if [ -d .adk_env ]; then
 else
   warn "No .adk_env — run ./scripts/setup-env.sh first"
 fi
+
+# `adk` MUST resolve inside the venv, or the ADK Web UI crashes on agent load
+# with "LiteLLM support requires: pip install google-adk[extensions]" (a
+# system-installed adk has no litellm). This is the exact on-stage failure to
+# catch here, not at showtime.
+if ! command -v adk >/dev/null 2>&1; then
+  fail "'adk' not found on PATH — run ./setup_venv.sh (or activate .adk_env)"; exit 1
+fi
+_ADK_PATH="$(command -v adk)"
+case "$_ADK_PATH" in
+  "$ROOT/.adk_env/"*)
+    ok "adk resolves to the venv ($_ADK_PATH)" ;;
+  *)
+    fail "adk resolves OUTSIDE the venv: $_ADK_PATH"
+    echo "     The ADK Web UI would crash with the 'google-adk[extensions]' error"
+    echo "     (a system adk has no litellm). Fix before demoing:"
+    echo "       source .adk_env/bin/activate     # then re-run this script"
+    echo "       (./run.sh also forces the venv automatically)"
+    exit 1 ;;
+esac
+
 echo "── Running offline test suite ──"
 if python -m pytest tests/ -q >/tmp/preflight_tests.log 2>&1; then
   ok "$(tail -1 /tmp/preflight_tests.log)"
