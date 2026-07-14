@@ -43,7 +43,11 @@ best card** — and does it offline, so your spending data never leaves your lap
   -->
   <img src="demo/demo-1.jpeg" alt="Sample output: which card to use for a MacBook Pro purchase — winner, runner-up, a comparison table, and a recommendation" width="600">
   <br>
-  <em>Sample run: working through a "which card for a MacBook Pro?" decision.</em>
+  <em>Sample run: a "which card for a MacBook Pro?" decision.</em>
+  <br><br>
+  <img src="demo/demo-2.png" alt="Sample output: which card for a Star Health insurance renewal — Winner: Tata Neu Infinity, with reward, logic and a live-update note" width="600">
+  <br>
+  <em>Sample run: a health-insurance renewal, answered in the same Winner / Reward / Logic / Live Update format (shown via the companion <a href="gems/gemini-gem-instruction.md">Gemini Gem</a>).</em>
 </div>
 
 ## Table of contents
@@ -140,49 +144,11 @@ spends** so caps and milestones are accurate, then **ask "which card?" anytime**
 Everything below runs on your machine — the only network hop is an opt-in offer
 search built from merchant + card names.
 
-```mermaid
-flowchart TD
-    subgraph P1["① Onboard your cards — build the knowledge base (once)"]
-        direction TB
-        O1["You run:<br/>./scripts/setup_cards.sh"] --> O2["Onboarding agent (local Gemma)<br/>interviews you: 'Which cards do you hold?'"]
-        O2 --> O3["You describe a card in plain language<br/>e.g. 'I have the Tata Neu Infinity HDFC card'"]
-        O3 --> O4["Agent researches current terms<br/>web search: card name + 'reward rate / caps 2026'"]
-        O4 --> O5{"Confirm before write<br/>(require_confirmation_before_write gate)"}
-        O5 -- "you say 'yes, save it'" --> O6["save_card / add_decision_rule<br/>validates + writes"]
-        O5 -- "not confirmed" --> O3
-        O6 --> CFG[("config/cards.config<br/>reward rates · caps · routing · fee waivers")]
-    end
+<div align="center">
+  <img src="demo/user-journey.png" alt="End-to-end user journey: onboard your cards into config/cards.config, optionally import a statement CSV into the local spend log, then ask 'which card?' and get a Winner / Reward / Logic / Live Update answer — all on-device except an opt-in offer search" width="900">
+</div>
 
-    subgraph P2["② Import past spends — so caps & milestones are accurate (optional)"]
-        direction TB
-        I1["Export your card statement as CSV<br/>(convert a PDF statement to CSV first if needed)"] --> I2["You run:<br/>python scripts/import_spends.py --csv statement.csv"]
-        I2 --> I3["Parses on-device, nets debits vs credits,<br/>skips ambiguous cards · aggregates to monthly totals<br/>(CSV & line items discarded) · keeps last 13 months"]
-        I3 --> DB[("db/ SQLite<br/>monthly per-card / per-category totals only")]
-    end
-
-    subgraph P3["③ Ask anytime — get the winning card"]
-        direction TB
-        Q1["You run ./run.sh and open the ADK Web UI<br/>'Spending Rs.60,000 on a TV at Croma — which card?'"] --> Q2["optimizer root agent (local Gemma)<br/>parses amount + merchant"]
-        Q2 --> Q3{"Named a specific card?<br/>(e.g. 'my Axis card')"}
-        Q3 -- "ambiguous" --> Q3b["Reverse-prompt:<br/>'Which one — Axis Rewards or Axis RuPay?'"]
-        Q3b --> Q2
-        Q3 -- "no / resolved" --> Q4["Card tools: find_cards_for_category,<br/>compare_cards_for_spend, estimate_net_cost"]
-        Q2 -. "spending / cap / ROI question" .-> Q5["spend_manager sub-agent:<br/>check_cap_status · record_spend · assess_card_value"]
-        Q2 -. "only if you ask about live offers" .-> Q6["web search<br/>(merchant + card names, no amounts)"]
-        Q4 --> ANS["Answer:<br/>Winner · Reward · Logic · Live Update"]
-        Q5 --> ANS
-        Q6 --> ANS
-    end
-
-    CFG -.->|"read on every question"| Q4
-    DB -.->|"read for caps / thresholds"| Q5
-    Q6 -.-> NET(["web: latest offers / devaluations"])
-
-    classDef store fill:#e8f0fe,stroke:#4285f4,color:#000;
-    classDef ext fill:#fef7e0,stroke:#f9ab00,color:#000;
-    class CFG,DB store;
-    class NET ext;
-```
+<sub>Diagram source (editable Mermaid): [`mermaid/user-journey.mmd`](mermaid/user-journey.mmd)</sub>
 
 ### ① Onboard your cards → `config/cards.config`
 
@@ -254,39 +220,11 @@ sub-agent** (see [Agent architecture](AGENTS.md#agent-architecture-one-feature--
 so the common path stays lean on tokens. All card knowledge is read from config;
 only the web-search tool touches the network.
 
-```mermaid
-flowchart TD
-    U["You ask:<br/>'Spending Rs.X at a merchant — which card?'"] --> AG["optimizer agent (root router)<br/>local Gemma via Ollama"]
+<div align="center">
+  <img src="demo/how-it-works.png" alt="Architecture: the root optimizer agent (local Gemma) routes to deterministic, config-driven card tools, delegates spending questions to the spend_manager sub-agent, and calls an opt-in web search — reading config/cards.config and the local SQLite store, and returning a Winner / Reward / Logic / Live Update answer" width="820">
+</div>
 
-    subgraph Card["Card tools — deterministic, config-driven"]
-        R["find_cards_for_category"]
-        CMP["compare_cards_for_spend"]
-        D["get_card_details"]
-        V["estimate_reward_value /<br/>estimate_net_cost"]
-    end
-
-    subgraph Spend["spend_manager sub-agent (AgentTool)"]
-        SC["check_cap_status /<br/>check_fee_waiver_status"]
-        SR["record_spend / get_spend_history /<br/>assess_card_value"]
-    end
-
-    AG --> R
-    AG --> CMP
-    AG --> D
-    AG --> V
-    AG --> Spend
-    AG --> WS["web search<br/>(Google grounding / DuckDuckGo)"]
-
-    R --> CFG["config/cards.config"]
-    CMP --> CFG
-    D --> CFG
-    V --> CFG
-    SC --> DB["db/ SQLite<br/>user-scoped state"]
-    SR --> DB
-    WS --> NET["web:<br/>latest offers / devaluations"]
-
-    AG --> ANS["Answer:<br/>Winner / Reward / Logic / Live Update"]
-```
+<sub>Diagram source (editable Mermaid): [`mermaid/how-it-works.mmd`](mermaid/how-it-works.mmd)</sub>
 
 **Request flow:** parse the transaction → route it through the decision matrix →
 check any relevant cap/threshold → run a focused live-offer search → reply with
@@ -335,13 +273,8 @@ demonstrates the portability ADK provides across Google's local (Gemma) and host
 > raw Gem instruction is kept for reference at
 > [`gems/gemini-gem-instruction.md`](gems/gemini-gem-instruction.md) — paste it
 > into a new Gem and go. The local app is the privacy-preserving rebuild of it;
-> the reference file explains how the two differ.
-
-<div align="center">
-  <img src="demo/demo-2.png" alt="The Gemini Gem answering which card to use for a Star Health insurance renewal — Winner: Tata Neu Infinity, with reward, logic and a live-update note" width="620">
-  <br>
-  <em>The reference Gemini Gem in action (cloud): a Star Health insurance renewal answered in the same Winner / Reward / Logic / Live Update format, inside a Gemini account.</em>
-</div>
+> the reference file explains how the two differ. _(The insurance-renewal
+> screenshot at the top of this README is this Gem in action.)_
 
 **TL;DR:** a Gemma model (via Ollama) orchestrates a set of deterministic tools,
 exposed and run through Google ADK and its Web UI, with all card knowledge as
