@@ -22,6 +22,12 @@ import re
 
 from ddgs import DDGS
 
+# Hard cap on how long the live web-search step may block. Without this the call
+# can hang on flaky networks (e.g. a conference/venue wifi) and stall the whole
+# "which card?" answer. On timeout/any failure ddg_search returns a short string
+# and the agent simply reports "no live data" — the recommendation still stands.
+_SEARCH_TIMEOUT_SECONDS = 5
+
 # Currency markers that flag a transaction amount: "Rs", "Rs.", "₹", "INR",
 # "rupee"/"rupees" (case-insensitive).
 _CURRENCY = r"(?:rs\.?|inr|rupees?|₹)"
@@ -82,7 +88,7 @@ def ddg_search(query: str) -> str:
     # wrote.
     query = _strip_amounts(query)
     try:
-        results = DDGS().text(query, max_results=10)
+        results = DDGS(timeout=_SEARCH_TIMEOUT_SECONDS).text(query, max_results=10)
         if not results:
             return f"No results found for: {query}"
 

@@ -25,7 +25,7 @@ EVAL_CASES = [
     },
     {
         "prompt": "I am making a Rs.3,000 UPI payment to a merchant. Which card?",
-        "expect": "Axis RuPay",
+        "expect": "Scapia RuPay",
     },
     {"prompt": "I am buying USD 500 of forex. Which card?", "expect": "Uni GoldX"},
     {

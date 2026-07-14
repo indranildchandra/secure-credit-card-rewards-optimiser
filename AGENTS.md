@@ -48,8 +48,10 @@ to `scripts/setup-env.sh`, so the environment is identical everywhere.
 | `data/cards.py` (`validate_config`) | Fail-fast structural validation of `cards.config` at load. |
 | `.github/workflows/ci.yml` | CI: ruff + black + pytest on push/PR. |
 | `config.py` | Reads `config/model.config` → `MODEL`. |
-| `tests/` | Offline pytest suite + `TEST-CASES.md`. |
+| `tests/` | Offline pytest suite (~87% engine coverage) + `TEST-CASES.md`. |
+| `tests/test_agent_smoke.py` | End-to-end ADK wiring test with a scripted model (never skipped — no Ollama needed). |
 | `scripts/setup-env.sh` | Shared environment bootstrap. |
+| `scripts/demo-preflight.sh` | Pre-demo check: verifies Ollama + model, runs tests, pre-warms the model. |
 
 ## Agent architecture: one feature → one sub-agent
 
@@ -93,6 +95,12 @@ the machine-readable fields (`value_back`, `tracker`, `fee_waiver`, `min_txn`,
 
 If you find yourself writing `if card_name == "...":` in a tool, stop — express
 it as config instead.
+
+**Freshness:** the shipped `config/cards.config` was verified against current
+issuer terms in **July 2026** (rates, caps, fee-waiver thresholds, reward
+exclusions, recent devaluations). Card terms drift constantly — when you touch a
+card, re-confirm its numbers against the issuer's latest T&C, and keep
+`data/cards.py` / `config/system_instruction.prompt` date stamps in sync.
 
 ## Privacy invariants (do not break)
 
@@ -156,7 +164,10 @@ ruff check . && black --check .   # lint + format check
 
 Add or update tests for any logic change. New tracker/routing behaviour should be
 covered by a config-driven test (see `tests/test_spend_tracker.py` for the
-pattern that registers a card purely via config data).
+pattern that registers a card purely via config data). `tests/test_agent_smoke.py`
+drives the real agent through ADK's runner with a scripted model (no Ollama), so
+the agent→tool→response wiring stays proven in CI; the full LLM-in-the-loop path
+is graded by `evals/` (needs a live model, skipped offline).
 
 ## Commits & pull requests
 

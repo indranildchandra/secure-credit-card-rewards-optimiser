@@ -239,6 +239,11 @@ cd secure-credit-card-rewards-optimiser
 Open <http://localhost:8080>, select the **`optimizer`** agent, and ask away.
 `./run.sh --clean` wipes the local session DB (resets tracked spends/caps).
 
+> **Demoing or presenting live?** Run
+> [`./scripts/demo-preflight.sh`](scripts/demo-preflight.sh) first — it verifies
+> Ollama, pulls the model, runs the offline suite, and **pre-warms** the model so
+> your first query isn't a slow cold-load.
+
 > **New here?** Step 2 is the fastest way to get going — see
 > [Onboard your cards by chatting](#onboard-your-cards-by-chatting-natural-language).
 > The shipped `config/cards.config` is only an example portfolio.
@@ -282,6 +287,12 @@ core routing, UPI amount bands, nuance checks, and cap-aware flows.
 This is a **generic** optimiser — bring your portfolio by editing
 [`config/cards.config`](config/cards.config) (JSON). No Python changes. The
 shipped config is just an example set of cards.
+
+> **Data freshness:** the example `cards.config` was **verified against current
+> issuer terms in July 2026** (rates, caps, fee-waiver thresholds, reward
+> exclusions and recent devaluations). Card terms change often — the live
+> offer-check surfaces anything newer at query time, and you should re-confirm
+> the numbers for your own cards against the issuer's latest T&C.
 
 Each card entry:
 
@@ -390,16 +401,22 @@ Ollama (earlier Gemma generations do not, so they won't work). Set your tag in
 
 ```ini
 MODEL_PROVIDER=ollama
-MODEL_NAME=gemma4:e2b
+MODEL_NAME=gemma4:e4b
 OLLAMA_API_BASE=http://localhost:11434
 ```
 
 | Model tag | Approx size | Notes |
 |-----------|-------------|-------|
-| `gemma4:e2b` | ~7.2 GB | Efficient; good for 16 GB RAM machines (**default**). |
-| `gemma4:e4b` | ~9.6 GB | Higher quality; needs 16 GB+ RAM. |
+| `gemma4:e2b` | ~7.2 GB | Efficient; good for 16 GB RAM machines. |
+| `gemma4:e4b` | ~9.6 GB | **Default** — stronger, more reliable tool-calling; needs 16 GB+ RAM. |
 | `gemma4`     | —       | Alias for the current Gemma 4 default tag. |
 | `gemma4:27b` | ~17 GB  | Best quality; needs a large-VRAM GPU. |
+
+> **Tool-calling matters here.** The whole app is tool-calls, and a larger tag
+> calls tools more reliably than `e2b`. On 16 GB+ machines prefer `gemma4:e4b`
+> (the default). Before a live run, `./scripts/demo-preflight.sh` checks Ollama,
+> pulls the model, runs the offline suite, and **pre-warms** the model so your
+> first query isn't a slow cold-load.
 
 ### Optional cloud path: Ollama Cloud (for testing without a local GPU)
 
@@ -535,10 +552,17 @@ source .adk_env/bin/activate
 python -m pytest tests/ -q
 ```
 
-It validates decision-matrix routing, reward estimates, and cap/threshold math —
+It validates decision-matrix routing, reward estimates, cap/threshold math, card
+disambiguation, config validation, spend import, and the privacy sanitiser —
 including a test that registers a brand-new card purely via config data to prove
-the engine is config-driven. End-to-end prompts live in
-[`tests/TEST-CASES.md`](tests/TEST-CASES.md).
+the engine is config-driven. Coverage sits at **~87%** of the engine modules.
+
+One test ([`tests/test_agent_smoke.py`](tests/test_agent_smoke.py)) drives the
+**real agent through ADK's runner with a scripted model** (no Ollama needed, so
+it never skips) — proving the agent → tool-dispatch → real-tool → response wiring
+is intact even in CI. The full LLM-in-the-loop behaviour is graded by the
+end-to-end **evals** (below), which need a live model. End-to-end prompts also
+live in [`tests/TEST-CASES.md`](tests/TEST-CASES.md).
 
 ## Linting & formatting
 

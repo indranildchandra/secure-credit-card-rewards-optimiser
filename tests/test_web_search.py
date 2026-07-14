@@ -75,6 +75,12 @@ class _StubDDGS:
     """Records the query passed to ``.text`` instead of hitting the network."""
 
     last_query = None
+    last_timeout = None
+
+    def __init__(self, **kwargs):
+        # The tool constructs DDGS(timeout=...); capture it so we can assert the
+        # explicit timeout is actually passed through.
+        _StubDDGS.last_timeout = kwargs.get("timeout")
 
     def text(self, query, max_results=10):
         _StubDDGS.last_query = query
@@ -93,3 +99,27 @@ def test_ddg_search_sends_sanitised_query(monkeypatch):
     assert "2026" in sent
     # the header echoes the (already sanitised) query, not the raw amount.
     assert "85,000" not in result
+
+
+def test_ddg_search_passes_explicit_timeout(monkeypatch):
+    # Demo-safety: the search must run with a bounded timeout, never unbounded.
+    monkeypatch.setattr(ddg, "DDGS", _StubDDGS)
+    ddg_search("HSBC Live+ Swiggy offer 2026")
+    assert _StubDDGS.last_timeout == ddg._SEARCH_TIMEOUT_SECONDS
+    assert isinstance(_StubDDGS.last_timeout, (int, float))
+
+
+def test_ddg_search_degrades_gracefully_on_failure(monkeypatch):
+    # Network failure / timeout must NOT raise — the tool returns a short string
+    # so the agent can say "no live data" and still give its recommendation.
+    class _BoomDDGS:
+        def __init__(self, **kwargs):
+            pass
+
+        def text(self, query, max_results=10):
+            raise TimeoutError("connection timed out")
+
+    monkeypatch.setattr(ddg, "DDGS", _BoomDDGS)
+    result = ddg_search("HSBC Live+ Swiggy offer 2026")
+    assert isinstance(result, str)
+    assert "Search failed" in result  # graceful, not an exception

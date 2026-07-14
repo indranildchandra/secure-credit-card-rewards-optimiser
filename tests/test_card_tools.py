@@ -61,8 +61,10 @@ def test_upi_low_band_routes_to_scapia_rupay():
     assert _primary("UPI payment to a merchant", 1000) == "Scapia RuPay"
 
 
-def test_upi_high_band_routes_to_axis_rupay():
-    assert _primary("UPI merchant payment", 3000) == "Axis RuPay"
+def test_upi_high_band_routes_to_scapia_rupay():
+    # After Axis RuPay was correctly repriced to ~0.2%, Scapia RuPay (~1%) is the
+    # better large-UPI card, so it is now the primary for >Rs.2,000 too.
+    assert _primary("UPI merchant payment", 3000) == "Scapia RuPay"
 
 
 def test_smartbuy_travel_routes_to_hdfc():
