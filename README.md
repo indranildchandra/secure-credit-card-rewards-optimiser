@@ -50,6 +50,7 @@ best card** — and does it offline, so your spending data never leaves your lap
 
 - [Why this exists](#why-this-exists)
 - [Highlights](#highlights)
+- [The complete user journey](#the-complete-user-journey)
 - [How it works](#how-it-works)
 - [Built on Google's AI stack](#built-on-googles-ai-stack)
 - [Security model](#security-model)
@@ -131,6 +132,107 @@ Key properties:
 - **Live offer check** — a focused web search surfaces the latest offers and
   devaluations, with the query built around _merchant + card names only_.
 - **Zero custom UI** — the interface is the stock **Google ADK Web UI**.
+
+## The complete user journey
+
+There are three phases: **onboard your cards once**, optionally **import past
+spends** so caps and milestones are accurate, then **ask "which card?" anytime**.
+Everything below runs on your machine — the only network hop is an opt-in offer
+search built from merchant + card names.
+
+```mermaid
+flowchart TD
+    subgraph P1["① Onboard your cards — build the knowledge base (once)"]
+        direction TB
+        O1["You run:<br/>./scripts/setup_cards.sh"] --> O2["Onboarding agent (local Gemma)<br/>interviews you: 'Which cards do you hold?'"]
+        O2 --> O3["You describe a card in plain language<br/>e.g. 'I have the Tata Neu Infinity HDFC card'"]
+        O3 --> O4["Agent researches current terms<br/>web search: card name + 'reward rate / caps 2026'"]
+        O4 --> O5{"Confirm before write<br/>(require_confirmation_before_write gate)"}
+        O5 -- "you say 'yes, save it'" --> O6["save_card / add_decision_rule<br/>validates + writes"]
+        O5 -- "not confirmed" --> O3
+        O6 --> CFG[("config/cards.config<br/>reward rates · caps · routing · fee waivers")]
+    end
+
+    subgraph P2["② Import past spends — so caps & milestones are accurate (optional)"]
+        direction TB
+        I1["Export your card statement as CSV<br/>(convert a PDF statement to CSV first if needed)"] --> I2["You run:<br/>python scripts/import_spends.py --csv statement.csv"]
+        I2 --> I3["Parses rows on-device, nets debits vs credits,<br/>skips ambiguous cards · keeps last 13 months"]
+        I3 --> DB[("db/ SQLite<br/>user-scoped spend log")]
+    end
+
+    subgraph P3["③ Ask anytime — get the winning card"]
+        direction TB
+        Q1["You run ./run.sh and open the ADK Web UI<br/>'Spending Rs.60,000 on a TV at Croma — which card?'"] --> Q2["optimizer root agent (local Gemma)<br/>parses amount + merchant"]
+        Q2 --> Q3{"Named a specific card?<br/>(e.g. 'my Axis card')"}
+        Q3 -- "ambiguous" --> Q3b["Reverse-prompt:<br/>'Which one — Axis Rewards or Axis RuPay?'"]
+        Q3b --> Q2
+        Q3 -- "no / resolved" --> Q4["Card tools: find_cards_for_category,<br/>compare_cards_for_spend, estimate_net_cost"]
+        Q2 -. "spending / cap / ROI question" .-> Q5["spend_manager sub-agent:<br/>check_cap_status · record_spend · assess_card_value"]
+        Q2 -. "only if you ask about live offers" .-> Q6["web search<br/>(merchant + card names, no amounts)"]
+        Q4 --> ANS["Answer:<br/>Winner · Reward · Logic · Live Update"]
+        Q5 --> ANS
+        Q6 --> ANS
+    end
+
+    CFG -.->|"read on every question"| Q4
+    DB -.->|"read for caps / thresholds"| Q5
+    Q6 -.-> NET(["web: latest offers / devaluations"])
+
+    classDef store fill:#e8f0fe,stroke:#4285f4,color:#000;
+    classDef ext fill:#fef7e0,stroke:#f9ab00,color:#000;
+    class CFG,DB store;
+    class NET ext;
+```
+
+### ① Onboard your cards → `config/cards.config`
+
+Run [`./scripts/setup_cards.sh`](scripts/setup_cards.sh) and the **onboarding
+agent** interviews you in plain language. You say _"I have the Tata Neu Infinity
+HDFC card"_; the agent researches its current reward rates, caps and fee-waiver
+terms with a focused web search, shows you what it found, and asks you to confirm.
+Only after you explicitly say _"yes, save it"_ does a code-level gate
+(`require_confirmation_before_write`) allow `save_card` / `add_decision_rule` to
+validate and write the entry — so a poisoned search result can never trigger a
+silent write. The result is your personal knowledge base in
+[`config/cards.config`](config/cards.config): reward rates, category caps, UPI
+bands, routing rules and fee waivers, all as data. Prefer editing by hand? Skip
+the interview and write the JSON directly (see
+[Configure it for your own cards](#configure-it-for-your-own-cards)).
+
+### ② Import past spends → `db/` (optional but recommended)
+
+Cap, milestone and fee-waiver tracking only works if the optimiser knows what
+you've already spent this cycle. Export your card statement as **CSV** (if your
+issuer only gives a PDF, convert it to CSV first) and run
+`python scripts/import_spends.py --csv statement.csv`. It parses the rows
+**entirely on-device**, nets debits against credits/refunds, skips rows whose card
+can't be matched unambiguously, and keeps the most-recent 13 months in the local
+SQLite store under `db/`. Nothing here touches the network. You can skip this and
+just let the agent record spends as you confirm purchases — importing simply
+seeds the history so caps are correct from day one.
+
+### ③ Ask a question → Winner / Reward / Logic / Live Update
+
+Run [`./run.sh`](run.sh), open the **ADK Web UI**, and ask in plain language:
+_"Spending Rs.60,000 on a TV at Croma — which card?"_ The **optimizer root agent**
+parses the amount and merchant, then:
+
+- **If you named a specific card ambiguously** ("my Axis card" when you hold
+  several), it **reverse-prompts** — _"Which one, Axis Rewards or Axis RuPay?"_ —
+  before doing anything else.
+- **Routes** the transaction through your decision matrix with deterministic card
+  tools (`find_cards_for_category`, `compare_cards_for_spend`, `estimate_net_cost`),
+  reading `config/cards.config`.
+- **Delegates spending questions** (cap status, "record this", "is this card worth
+  its fee?") to the **`spend_manager` sub-agent**, which reads/writes the `db/`
+  spend log.
+- **Checks live offers only if you ask** — an ordinary "which card?" stays fully
+  offline and fast; a web search fires only when you explicitly ask about current
+  offers or devaluations, and its query carries merchant + card names only, never
+  your amount.
+
+The reply is always the same crisp four fields: **The Winner**, **The Reward**,
+**The Logic**, and **The Live Update**.
 
 ## How it works
 
