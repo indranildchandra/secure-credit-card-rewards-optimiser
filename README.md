@@ -329,6 +329,14 @@ DuckDuckGo tool — wired as an ADK `AgentTool` sub-agent (ADK's built-in
 demonstrates the portability ADK provides across Google's local (Gemma) and hosted
 (Gemini) models.
 
+> **No-setup alternative — a Gemini Gem.** If you don't need the offline guarantee
+> and just want the recommendations with zero install, this repo grew out of a
+> **Gemini Gem** that does the same job entirely inside your Gemini account. The
+> raw Gem instruction is kept for reference at
+> [`docs/gemini-gem-instruction.md`](docs/gemini-gem-instruction.md) — paste it
+> into a new Gem and go. The local app is the privacy-preserving rebuild of it;
+> the reference file explains how the two differ.
+
 **TL;DR:** a Gemma model (via Ollama) orchestrates a set of deterministic tools,
 exposed and run through Google ADK and its Web UI, with all card knowledge as
 config — delivering cloud-quality rewards advice with on-device privacy.
