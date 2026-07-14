@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 
 from config import MODEL
 from .context_window import trim_history_before_model
+from .loop_guard import break_tool_call_loops
 from .spend_agent import spend_manager_tool
 from tools.web_search import build_web_search_tool
 from tools.card_tools import (
@@ -44,6 +45,16 @@ _PROMPT_PATH = os.path.join(
 with open(_PROMPT_PATH, encoding="utf-8") as _f:
     INSTRUCTION = _f.read()
 
+
+def _before_model(callback_context, llm_request):
+    """Composed before_model_callback: break tool-call loops first (a safety net
+    for weak local models), then apply optional history compaction."""
+    result = break_tool_call_loops(callback_context, llm_request)
+    if result is not None:
+        return result
+    return trim_history_before_model(callback_context, llm_request)
+
+
 root_agent = Agent(
     name="optimizer",
     model=MODEL,
@@ -60,7 +71,7 @@ root_agent = Agent(
         spend_manager_tool,
         web_search_tool,
     ],
-    before_model_callback=trim_history_before_model,
+    before_model_callback=_before_model,
 )
 
 print(" Credit Card Optimiser agent ready.")
