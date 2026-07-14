@@ -15,47 +15,65 @@ This is a robustness backstop, not a substitute for a capable model — a strong
 model never trips it (it calls each tool once and answers).
 """
 
+import json
+
 from google.genai import types
 
-# Calling the same tool this many times in one turn == the model is looping.
-_SAME_TOOL_LOOP_THRESHOLD = 2
-# Absolute cap on tool calls per turn (also catches tool-alternating loops).
-_MAX_TOOL_CALLS_PER_TURN = 5
+# An IDENTICAL call (same tool + same arguments) repeated this many times is a
+# loop: re-issuing it cannot return anything new. Calling the same tool with
+# DIFFERENT arguments (e.g. get_card_details for two different cards) is a
+# legitimate multi-call flow and is NOT restricted.
+_IDENTICAL_CALL_THRESHOLD = 2
+# Pure runaway backstop: an upper bound on total tool calls per turn, generous
+# so it never clips a genuine multi-tool flow (compare several cards, check a
+# cap, web-search) — it only stops a pathological loop that varies its args.
+_MAX_TOOL_CALLS_PER_TURN = 10
 
 _FINALIZE_NOTE = (
-    "You already have the tool results above. Do NOT call any more tools — "
-    "calling the same tool again will not give new information. Using only the "
-    "information already gathered, write the final answer NOW in the required "
-    "four-field format (The Winner / The Reward / The Logic / The Live Update)."
+    "You already have the tool results above. Do NOT repeat a tool call you have "
+    "already made — it returns the same result. Using the information already "
+    "gathered, write the final answer NOW in the required four-field format "
+    "(The Winner / The Reward / The Logic / The Live Update)."
 )
 
 
-def _tool_call_counts(contents) -> dict:
-    """Count function calls by tool name across the request's contents."""
+def _canonical_args(function_call) -> str:
+    """Stable string for a call's arguments so identical calls compare equal."""
+    args = getattr(function_call, "args", None) or {}
+    try:
+        return json.dumps(args, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return str(args)
+
+
+def _identical_call_counts(contents) -> dict:
+    """Count function calls keyed by (tool name, canonical arguments)."""
     counts: dict = {}
     for content in contents or []:
         for part in getattr(content, "parts", None) or []:
             fc = getattr(part, "function_call", None)
             name = getattr(fc, "name", None) if fc is not None else None
             if name:
-                counts[name] = counts.get(name, 0) + 1
+                key = (name, _canonical_args(fc))
+                counts[key] = counts.get(key, 0) + 1
     return counts
 
 
 def break_tool_call_loops(callback_context, llm_request):
     """ADK before_model_callback: force finalisation when the model loops on tools.
 
-    Mutates ``llm_request`` in place and returns None (proceed). No-op until a
-    repeated tool call (or the per-turn budget) is detected.
+    Mutates ``llm_request`` in place and returns None (proceed). Fires only when
+    the model repeats an IDENTICAL call (same tool + same args) or blows the
+    per-turn total budget — genuine multi-tool / different-args calls are allowed.
     """
     contents = getattr(llm_request, "contents", None)
-    counts = _tool_call_counts(contents)
+    counts = _identical_call_counts(contents)
     if not counts:
         return None
 
     total = sum(counts.values())
     most_repeated = max(counts.values())
-    if most_repeated < _SAME_TOOL_LOOP_THRESHOLD and total < _MAX_TOOL_CALLS_PER_TURN:
+    if most_repeated < _IDENTICAL_CALL_THRESHOLD and total < _MAX_TOOL_CALLS_PER_TURN:
         return None
 
     # Loop / over-budget → remove the tools the model can see so it must answer

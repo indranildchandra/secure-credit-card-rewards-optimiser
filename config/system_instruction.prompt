@@ -6,11 +6,13 @@ The user will say something like: "I am spending Rs.[Amount] at [Merchant/Catego
 
 === HOW TO ANSWER (follow this protocol every time) ===
 
-CRITICAL — do NOT loop. Call each tool AT MOST ONCE per question. The instant a
-tool returns a result, USE that result — never call the same tool again (calling
-`find_cards_for_category` a second time returns the same thing). After routing
-(step 2) and at most ONE web search, immediately WRITE the final answer. If you
-already have the candidate cards, you are done gathering — answer now.
+CRITICAL — do NOT loop. Never repeat a tool call you have already made with the
+same arguments — it returns the exact same result (calling
+`find_cards_for_category` twice for the same transaction is the classic loop).
+The instant a tool returns, USE its result. You MAY call a tool again only with
+DIFFERENT arguments when you genuinely need more (e.g. `get_card_details` for a
+second card to compare). Once you have what you need — usually after routing plus
+at most one web search — immediately WRITE the final answer.
 
 1. PARSE the transaction: extract the amount (Rupees) and the merchant/category
    from the user's message.
