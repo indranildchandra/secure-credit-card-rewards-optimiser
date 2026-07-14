@@ -271,10 +271,32 @@ source .adk_env/bin/activate
 Open <http://localhost:8080>, select the **`optimizer`** agent, and ask away.
 `./run.sh --clean` wipes the local session DB (resets tracked spends/caps).
 
-> **Demoing or presenting live?** Run
-> [`./scripts/demo-preflight.sh`](scripts/demo-preflight.sh) first — it verifies
-> Ollama, pulls the model, runs the offline suite, and **pre-warms** the model so
-> your first query isn't a slow cold-load.
+### Launch the app (ADK Web UI)
+
+`./run.sh` boots everything (it activates the virtualenv, starts Ollama, pulls
+the model if needed, and serves the stock **ADK Web UI**). Then, in the browser:
+
+1. Open **<http://localhost:8080>**.
+2. In the **agent dropdown** (top-left), select **`optimizer`**.
+3. Type a transaction and press enter, e.g.:
+   - `I'm spending Rs.4,000 on Amazon. Which card?` → **ICICI AmazonPay**
+   - `I'm buying a TV at Croma for Rs.60,000. Which card?` → **Tata Neu Infinity**
+   - `Use my Axis card for this.` → it **asks which Axis card** you mean
+4. You get a **Winner / Reward / Logic / Live Update** answer. The left panel
+   shows the **tool calls** the agent made — proof it's calling deterministic
+   tools, not hallucinating.
+5. **Stop** with `Ctrl-C` (it also stops the Ollama process it started).
+
+> The **first** query is slow (cold model load). Run
+> [`./scripts/demo-preflight.sh`](scripts/demo-preflight.sh) beforehand — it
+> verifies Ollama, pulls the model, runs the offline suite, and **pre-warms** the
+> model so your first query is instant.
+
+> **Seeing `LiteLLM support requires: pip install google-adk[extensions]`?** You
+> ran `adk` under your **system** Python instead of the venv (litellm lives only
+> in `.adk_env`). Fix: use `./run.sh` (it now forces the venv), or
+> `source .adk_env/bin/activate` before launching. Tell-tale sign in the logs:
+> paths under `.../Python.framework/...` instead of `.../.adk_env/...`.
 
 > **New here?** Step 2 is the fastest way to get going — see
 > [Onboard your cards by chatting](#onboard-your-cards-by-chatting-natural-language).
