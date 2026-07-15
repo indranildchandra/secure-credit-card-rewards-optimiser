@@ -269,12 +269,14 @@ demonstrates the portability ADK provides across Google's local (Gemma) and host
 
 > **No-setup alternative — a Gemini Gem.** If you don't need the offline guarantee
 > and just want the recommendations with zero install, this repo grew out of a
-> **Gemini Gem** that does the same job entirely inside your Gemini account. The
-> raw Gem instruction is kept for reference at
-> [`gems/gemini-gem-instruction.md`](gems/gemini-gem-instruction.md) — paste it
-> into a new Gem and go. The local app is the privacy-preserving rebuild of it;
-> the reference file explains how the two differ. _(The insurance-renewal
-> screenshot at the top of this README is this Gem in action.)_
+> **Gemini Gem** that does the same job entirely inside your Gemini account. It
+> keeps the same config-over-code split: a generic
+> [instruction](gems/gemini-gem-instruction.md) you paste into the Gem, plus your
+> own card list as an attached knowledge file — copy
+> [`gems/my-cards.example.md`](gems/my-cards.example.md), edit in your cards, and
+> attach it. The local app is the privacy-preserving rebuild of it; the reference
+> file explains how the two differ. _(The insurance-renewal screenshot at the top
+> of this README is this Gem in action.)_
 
 **TL;DR:** a Gemma model (via Ollama) orchestrates a set of deterministic tools,
 exposed and run through Google ADK and its Web UI, with all card knowledge as
